@@ -89,6 +89,10 @@ export interface Ticket {
   createDate: string;
   changeDate: string;
   firstSeenAt: string;
+  /** OTMA ticket of the main work package; null while new, unknown or without one. */
+  otmaNumber: string | null;
+  /** "Verantwortlich" of the OTMA ticket; refreshed in batches while in process. */
+  otmaResponsible: string | null;
   customer: string | null;
   /** User-chosen color of the customer; null = computed by the app. */
   customerColor: string | null;
@@ -133,6 +137,8 @@ export class TicketService {
           createDate: tickets.createDate,
           changeDate: tickets.changeDate,
           firstSeenAt: tickets.firstSeenAt,
+          otmaNumber: tickets.otmaNumber,
+          otmaResponsible: tickets.otmaResponsible,
           customer: applications.customer,
           customerColor: customers.color,
         })
@@ -149,6 +155,81 @@ export class TicketService {
         )
         .all()
     );
+  }
+
+  /**
+   * In-process tickets whose OTMA number was never looked up, or that are still without one and
+   * changed since (the main work package may have been set later). A found number is kept for
+   * good. Closed tickets are not looked up. Most recently changed first.
+   */
+  otmaPending(): string[] {
+    return this.db
+      .select({ number: tickets.number })
+      .from(tickets)
+      .where(
+        and(
+          isNull(tickets.goneAt),
+          eq(tickets.status, 'inprocess'),
+          or(
+            isNull(tickets.otmaCheckedAt),
+            and(isNull(tickets.otmaNumber), sql`${tickets.changeDate} > ${tickets.otmaCheckedAt}`),
+          ),
+        ),
+      )
+      .orderBy(desc(tickets.changeDate))
+      .all()
+      .map((t) => t.number);
+  }
+
+  setOtmaNumber(number: string, otmaNumber: string | null): void {
+    this.db
+      .update(tickets)
+      .set({ otmaNumber, otmaCheckedAt: this.clock.now().toISOString() })
+      .where(eq(tickets.number, number))
+      .run();
+  }
+
+  /**
+   * Next batch of in-process tickets with an OTMA ticket whose responsible person is due:
+   * never looked up first, then the longest ago – so repeated batches rotate through all.
+   */
+  otmaResponsibleDue(
+    limit: number,
+  ): { number: string; otmaNumber: string; otmaResponsible: string | null }[] {
+    return (
+      this.db
+        .select({
+          number: tickets.number,
+          otmaNumber: sql<string>`${tickets.otmaNumber}`,
+          otmaResponsible: tickets.otmaResponsible,
+        })
+        .from(tickets)
+        // Only what the list shows: hidden projects would use up the batch for nothing.
+        .leftJoin(projects, projectOfTicket)
+        .where(
+          and(
+            isNull(tickets.goneAt),
+            projectShown,
+            eq(tickets.status, 'inprocess'),
+            sql`${tickets.otmaNumber} is not null`,
+          ),
+        )
+        .orderBy(
+          sql`${tickets.otmaResponsibleAt} is not null`,
+          asc(tickets.otmaResponsibleAt),
+          asc(tickets.number),
+        )
+        .limit(limit)
+        .all()
+    );
+  }
+
+  setOtmaResponsible(number: string, otmaResponsible: string | null): void {
+    this.db
+      .update(tickets)
+      .set({ otmaResponsible, otmaResponsibleAt: this.clock.now().toISOString() })
+      .where(eq(tickets.number, number))
+      .run();
   }
 
   /**

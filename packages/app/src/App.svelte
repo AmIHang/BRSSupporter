@@ -2,7 +2,8 @@
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { onMount } from 'svelte';
   import { api, type SyncState, type Ticket } from './lib/api';
-  import { customerColor, textOn } from './lib/colors';
+  import { customerColor, defaultColor, textOn } from './lib/colors';
+  import { OTMA_TICKET_BASE, otmaResponsibleNow } from './lib/otma';
   import { savedAlwaysOnTop, setAlwaysOnTop } from './lib/pin';
   import Settings from './Settings.svelte';
 
@@ -224,6 +225,13 @@
           disabled={!t.link}
           title={t.link ? 'Im BSM öffnen' : undefined}>{t.number}</button
         >
+        {#if t.otmaNumber}
+          <button
+            class="chip otma"
+            title="OTMA-Ticket öffnen"
+            onclick={() => openUrl(OTMA_TICKET_BASE + t.otmaNumber)}>OTMA {t.otmaNumber}</button
+          >
+        {/if}
         <span class="chip status-{t.status}">{statusLabel(t.status)}</span>
         {#if t.status === 'new'}
           <button
@@ -240,9 +248,24 @@
           >
         {/if}
       </div>
-      <div class="summary">{t.summary ?? '(ohne Titel)'}</div>
+      <div class="line">
+        <div class="summary">{t.summary ?? '(ohne Titel)'}</div>
+        {#if t.otmaResponsible}
+          {@const who = otmaResponsibleNow(t.otmaResponsible)}
+          {@const bg = defaultColor(who)}
+          <span
+            class="chip responsible"
+            style="background: {bg}; color: {textOn(bg)}"
+            title="OTMA-Verantwortlich: {t.otmaResponsible}">{who}</span
+          >
+        {/if}
+      </div>
       <div class="muted">
-        {[t.applicationName, t.categoryName, t.handler ?? 'nicht zugewiesen']
+        {[
+          t.applicationName,
+          t.categoryName,
+          t.handler ?? 'nicht zugewiesen',
+        ]
           .filter(Boolean)
           .join(' · ')}
       </div>
@@ -343,7 +366,17 @@
   .head > [class*='status-'] {
     margin-left: auto;
   }
+  /* Title left (cut off when too long), OTMA responsible chip on the far right. */
+  .line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .responsible {
+    margin-left: auto;
+  }
   .summary {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -356,6 +389,13 @@
     border: 1px solid transparent;
   }
   .number:hover:not(:disabled) {
+    border-color: var(--accent);
+  }
+  .otma {
+    font-family: ui-monospace, monospace;
+    border: 1px solid var(--border);
+  }
+  .otma:hover {
     border-color: var(--accent);
   }
   .number:disabled {

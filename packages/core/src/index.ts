@@ -4,6 +4,7 @@ import { MemorySecretStore, type SecretStore } from './secrets.js';
 import { eq } from 'drizzle-orm';
 import { openDatabase } from './db/open.js';
 import { meta } from './db/schema.js';
+import { lookupOtmaNumber, lookupOtmaResponsible } from './otma.js';
 import { ProjectService, TicketService, type SyncResult } from './tickets.js';
 
 export * from './bsm.js';
@@ -102,6 +103,52 @@ export function createCore(options: CoreOptions) {
       setMeta('lastSyncAt', startedAt.toISOString());
       setMeta('lastSyncFilter', filterKey);
       return { ...result, mode: full ? 'full' : 'delta' };
+    },
+    /**
+     * Looks up the OTMA number of tickets in process (see TicketService.otmaPending) via BSM, one
+     * by one; each result is saved at once, so an error (e.g. login) only stops the rest.
+     */
+    async lookupOtmaNumbers(
+      fetch: BsmFetch,
+      numbers: string[] = tickets.otmaPending(),
+    ): Promise<{ checked: number; found: number }> {
+      let checked = 0;
+      let found = 0;
+      for (const number of numbers) {
+        const otma = await lookupOtmaNumber(fetch, number);
+        tickets.setOtmaNumber(number, otma);
+        checked++;
+        if (otma) found++;
+      }
+      return { checked, found };
+    },
+    /**
+     * Refreshes the OTMA responsible person of at most `batchSize` in-process tickets (the ones
+     * due longest), or of the given tickets with an OTMA number. `otmaFetch` must go to OTMA.
+     * Each result is saved at once; an error stops the rest. `pause` runs between two tickets.
+     */
+    async refreshOtmaResponsibles(
+      otmaFetch: BsmFetch,
+      which: number | string[],
+      pause: () => Promise<void> = async () => undefined,
+    ): Promise<{ checked: number; changed: number }> {
+      const due =
+        typeof which === 'number'
+          ? tickets.otmaResponsibleDue(which)
+          : tickets
+              .list()
+              .filter((t) => which.includes(t.number))
+              .flatMap((t) => (t.otmaNumber ? [{ ...t, otmaNumber: t.otmaNumber }] : []));
+      let checked = 0;
+      let changed = 0;
+      for (const t of due) {
+        if (checked) await pause();
+        const responsible = await lookupOtmaResponsible(otmaFetch, t.otmaNumber);
+        tickets.setOtmaResponsible(t.number, responsible);
+        checked++;
+        if (responsible !== t.otmaResponsible) changed++;
+      }
+      return { checked, changed };
     },
     close,
   };

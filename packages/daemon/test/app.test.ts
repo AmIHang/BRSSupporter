@@ -102,6 +102,17 @@ describe('REST', () => {
     expect((await patch({ syncIntervalMinutes: 15 })).body).toEqual({
       syncIntervalMinutes: 15,
       bsmFilter: {},
+      otmaResponsibleIntervalMinutes: 5,
+      otmaResponsibleBatchSize: 5,
+    });
+    expect((await patch({ otmaResponsibleBatchSize: 0 })).status).toBe(400);
+    expect((await patch({ otmaResponsibleBatchSize: 101 })).status).toBe(400);
+    expect(
+      (await patch({ otmaResponsibleIntervalMinutes: 10, otmaResponsibleBatchSize: 8 })).body,
+    ).toMatchObject({
+      syncIntervalMinutes: 15,
+      otmaResponsibleIntervalMinutes: 10,
+      otmaResponsibleBatchSize: 8,
     });
     const res = await request(app).get('/api/settings').set('Host', '127.0.0.1:47910');
     expect(res.body.syncIntervalMinutes).toBe(15);

@@ -18,6 +18,14 @@ export const tickets = sqliteTable('tickets', {
   /** The full BSM response (indication + referenced users) as JSON. */
   data: text('data').notNull(),
   firstSeenAt: text('first_seen_at').notNull(),
+  /** OTMA ticket of the main work package ("Hauptarbeitspaket"), looked up once in process. */
+  otmaNumber: text('otma_number'),
+  /** When the OTMA number was last looked up; again only after the ticket changed. */
+  otmaCheckedAt: text('otma_checked_at'),
+  /** "Verantwortlich" of the OTMA ticket (display name); null = none or not looked up yet. */
+  otmaResponsible: text('otma_responsible'),
+  /** Last lookup of the responsible person; in-process tickets are refreshed in batches. */
+  otmaResponsibleAt: text('otma_responsible_at'),
   /** Set when a complete snapshot no longer contains the ticket (left the filter). */
   goneAt: text('gone_at'),
 });

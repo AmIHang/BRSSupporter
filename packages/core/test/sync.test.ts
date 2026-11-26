@@ -308,6 +308,88 @@ describe('syncBsm', () => {
     expect(filters).toEqual([{ minChangeDateFilter: '2026-11-18T09:55:00.000Z' }]);
   });
 
+  it('looks up OTMA numbers for tickets past "new", again only after a change', async () => {
+    let now = new Date('2026-11-18T10:00:00Z');
+    const core = createCore({ databaseFile: ':memory:', clock: { now: () => now } });
+    const view = (withLink: boolean) => ({
+      ui: {
+        form: [
+          {
+            items: withLink
+              ? [
+                  {
+                    feat: 'cfNameLink',
+                    style: { link: 'Workflow:RedirectToOTMAByIndicationNumber' },
+                    linkContext: '*abc123',
+                  },
+                ]
+              : [],
+          },
+        ],
+      },
+    });
+    const views: string[] = [];
+    let failOn: string | null = null;
+    const fetch: BsmFetch = async (path, body) => {
+      if (path === '/personal/api/application') return { Applications: [] };
+      if (path === '/personal/api/queryIndications') return { Indications: serve };
+      const b = body as { WorkflowName: string; ContextOPath: string };
+      if (b.WorkflowName === 'JumpToIndication') {
+        const number = /^\|(\w+)\|/.exec(b.ContextOPath)![1]!;
+        if (number === failOn) throw new Error('BSM: nicht angemeldet');
+        views.push(number);
+        return view(number !== 'C3' && number !== 'D4');
+      }
+      return { link: { url: 'https://otma.boomsoftware.com//ap//178839' } };
+    };
+    let serve: unknown[] = [
+      { ...ticket('A1'), status: 'new' },
+      { ...ticket('B2'), status: 'inprocess' },
+      { ...ticket('C3'), status: 'inprocess' },
+    ];
+    await core.syncBsm(fetch, {});
+    expect(await core.lookupOtmaNumbers(fetch)).toEqual({ checked: 2, found: 1 });
+    expect(views.sort()).toEqual(['B2', 'C3']);
+    const otma = () => Object.fromEntries(core.tickets.list().map((t) => [t.number, t.otmaNumber]));
+    expect(otma()).toEqual({ A1: null, B2: '178839', C3: null });
+
+    // Nothing changed: no lookup. A1 goes in process, C3 changes: both looked up.
+    views.length = 0;
+    expect(await core.lookupOtmaNumbers(fetch)).toEqual({ checked: 0, found: 0 });
+    now = new Date('2026-11-18T10:30:00Z');
+    serve = [
+      { ...ticket('A1', '2026-11-18T10:20:00Z'), status: 'inprocess' },
+      { ...ticket('C3', '2026-11-18T10:21:00Z'), status: 'inprocess' },
+    ];
+    await core.syncBsm(fetch, {});
+    // An error stops the run; what was looked up before it is kept.
+    failOn = 'A1';
+    await expect(core.lookupOtmaNumbers(fetch)).rejects.toThrow('nicht angemeldet');
+    expect(views).toEqual(['C3']);
+    failOn = null;
+    expect(await core.lookupOtmaNumbers(fetch)).toEqual({ checked: 1, found: 1 });
+    expect(otma()).toEqual({ A1: '178839', B2: '178839', C3: null });
+
+    // Again after a change only while in process and still without number: C3 yes; B2 has one;
+    // D4 (checked before, no number) is delivered.
+    now = new Date('2026-11-18T10:45:00Z');
+    serve = [{ ...ticket('D4', '2026-11-18T10:40:00Z'), status: 'inprocess' }];
+    await core.syncBsm(fetch, {});
+    expect(await core.lookupOtmaNumbers(fetch)).toEqual({ checked: 1, found: 0 });
+    views.length = 0;
+    now = new Date('2026-11-18T11:00:00Z');
+    serve = [
+      { ...ticket('B2', '2026-11-18T10:51:00Z'), status: 'inprocess' },
+      { ...ticket('C3', '2026-11-18T10:52:00Z'), status: 'inprocess' },
+      { ...ticket('D4', '2026-11-18T10:53:00Z'), status: 'delivered' },
+      // Closed and never looked up (history): not looked up either.
+      { ...ticket('E5', '2026-11-18T10:54:00Z'), status: 'completed' },
+    ];
+    await core.syncBsm(fetch, {});
+    expect(await core.lookupOtmaNumbers(fetch)).toEqual({ checked: 1, found: 0 });
+    expect(views).toEqual(['C3']);
+  });
+
   it('changes nothing when BSM fails', async () => {
     const core = createCore({ databaseFile: ':memory:', clock });
     await core.syncBsm(fakeBsm([ticket('A1')]).fetch, {});

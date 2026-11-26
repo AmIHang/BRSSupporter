@@ -162,6 +162,44 @@
       </p>
     </section>
 
+    <section>
+      <h3>OTMA-Verantwortliche</h3>
+      <label class="inline">
+        Alle
+        <input
+          type="number"
+          min="1"
+          max="1440"
+          value={settings.otmaResponsibleIntervalMinutes}
+          onchange={(e) => {
+            const v = e.currentTarget.valueAsNumber;
+            if (Number.isInteger(v) && v >= 1 && v <= 1440) {
+              void save({ otmaResponsibleIntervalMinutes: v });
+            } else flash('Bitte 1 bis 1440 Minuten angeben', true);
+          }}
+        />
+        Minuten
+        <input
+          type="number"
+          min="1"
+          max="100"
+          value={settings.otmaResponsibleBatchSize}
+          onchange={(e) => {
+            const v = e.currentTarget.valueAsNumber;
+            if (Number.isInteger(v) && v >= 1 && v <= 100) {
+              void save({ otmaResponsibleBatchSize: v });
+            } else flash('Bitte 1 bis 100 Tickets angeben', true);
+          }}
+        />
+        Tickets prüfen
+      </label>
+      <p class="hint muted">
+        Die OTMA-Nummer kommt beim BSM-Abruf mit (für Tickets „In Bearbeitung“). Die
+        Verantwortlichen werden mit dem OTMA-Konto geprüft: nur Mo–Fr 7–19 Uhr, mit einigen Sekunden
+        Pause zwischen den Tickets, noch nie geprüfte zuerst, danach die am längsten nicht geprüften.
+        Ändert sich der Status eines Tickets, wird es gleich geprüft.
+      </p>
+    </section>
   {/if}
 
   <section>

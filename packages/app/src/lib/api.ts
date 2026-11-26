@@ -12,6 +12,10 @@ export interface Ticket {
   createDate: string;
   changeDate: string;
   firstSeenAt: string;
+  /** OTMA ticket of the main work package (looked up once in process). */
+  otmaNumber: string | null;
+  /** "Verantwortlich" of the OTMA ticket, refreshed in batches while in process. */
+  otmaResponsible: string | null;
   customer: string | null;
   /** Chosen color of the customer; null = computed (lib/colors.ts). */
   customerColor: string | null;
@@ -51,6 +55,8 @@ export interface Account {
 export interface Settings {
   bsmFilter: Record<string, unknown>;
   syncIntervalMinutes: number;
+  otmaResponsibleIntervalMinutes: number;
+  otmaResponsibleBatchSize: number;
 }
 
 const BASE = 'http://127.0.0.1:47910';
@@ -85,7 +91,7 @@ export const api = {
   saveAccount: (system: AccountSystem, user: string, password: string) =>
     call<void>(`/api/account/${system}`, 'PUT', { user, password }),
   deleteAccount: (system: AccountSystem) => call<void>(`/api/account/${system}`, 'DELETE'),
-  updateSettings: (patch: Partial<Pick<Settings, 'syncIntervalMinutes'>>) =>
+  updateSettings: (patch: Partial<Omit<Settings, 'bsmFilter'>>) =>
     call<Settings>('/api/settings', 'PATCH', patch),
   projects: () => call<{ projects: Project[] }>('/api/projects').then((r) => r.projects),
   setProjectHidden: (p: Project, hidden: boolean) =>

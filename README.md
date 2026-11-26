@@ -13,7 +13,12 @@ wie BRSOrganizer und BRSDispatcher (pnpm-Monorepo, Node-Daemon, Tauri 2 + Svelte
   Status; standardmäßig nur Neu und In Bearbeitung). Projekte/Kunden lassen sich in den
   Einstellungen ausblenden und einfärben.
 - In den Einstellungen gibt es je eine Anmeldung für BSM und für OTMA. Beide Konten müssen
-  verschiedene E-Mail-Adressen haben. OTMA wird noch nicht abgefragt.
+  verschiedene E-Mail-Adressen haben.
+- Wie im BRSDispatcher zeigt die Liste OTMA-Nummer und -Verantwortlichen: Die Nummer kommt beim
+  BSM-Abruf mit (Tickets „In Bearbeitung“, BSM-Konto), die Verantwortlichen prüft der Daemon mit
+  dem OTMA-Konto in kleinen Häppchen (Mo–Fr 7–19 Uhr, Intervall und Anzahl in den Einstellungen)
+  und sofort bei einer Statusänderung.
+- Tickets im Status „Neu“ lassen sich mit „Übernehmen“ dem BSM-Konto zuweisen.
 
 ## Anmeldung
 
