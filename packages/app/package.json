@@ -8,9 +8,10 @@
     "build": "vite build",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
+    "sidecar": "node ../../scripts/build-sidecar.mjs",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:dev": "pnpm sidecar && tauri dev",
+    "tauri:build": "pnpm sidecar && tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

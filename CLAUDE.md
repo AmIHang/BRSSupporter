@@ -7,11 +7,11 @@ Secret Store, MCP, SSE, OTMA-Abfragen) zuerst dort nachsehen und übernehmen.
 
 ## Aufbau (pnpm-Monorepo)
 
-| Paket             | Aufgabe                                                                                           |
-| ----------------- | ------------------------------------------------------------------------------------------------- |
-| `packages/core`   | SQLite (better-sqlite3 + Drizzle, WAL), Schema, BSM-Sync. **Einzige Stelle, die Daten ändert.**   |
-| `packages/daemon` | REST-API für die UI, periodischer Sync, BSM-Zugriff über Edge (playwright-core). Nur `127.0.0.1`. |
-| `packages/app`    | Tauri 2 + Svelte 5. Spricht nur über REST mit dem Daemon (`src/lib/api.ts`).                      |
+| Paket             | Aufgabe                                                                                                                                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core`   | SQLite (better-sqlite3 + Drizzle, WAL), Schema, BSM-Sync. **Einzige Stelle, die Daten ändert.**                                                                                                 |
+| `packages/daemon` | REST-API für die UI, periodischer Sync, BSM-Zugriff über Edge (playwright-core). Nur `127.0.0.1`.                                                                                               |
+| `packages/app`    | Tauri 2 + Svelte 5. Spricht nur über REST mit dem Daemon (`src/lib/api.ts`). Startet im Release den mitgelieferten Daemon (`src-tauri/src/daemon.rs`, Runtime aus `scripts/build-sidecar.mjs`). |
 
 Abhängigkeitsrichtung: `app` → (HTTP) → `daemon` → `core`. Niemand außer `daemon` importiert `core`.
 
@@ -34,6 +34,12 @@ Abhängigkeitsrichtung: `app` → (HTTP) → `daemon` → `core`. Niemand außer
   nie in DB, Logs, Config-Dateien oder REST-Antworten; das Passwort wird nur auf
   `auth.boomsoftware.com` eingetippt. Tests nutzen den `MemorySecretStore`.
 - HTTP-Endpunkte prüfen `Host` und `Origin`.
+
+## Handbuch
+
+`README.md` ist das Handbuch für Anwender (Entwicklerteil am Ende). **Jede Änderung, die man in
+der App sieht oder die ihr Verhalten ändert, aktualisiert das README im selben Commit** (Abschnitt
+passend ergänzen, Tabellen „Wie aktuell sind die Daten?“ und „Probleme und Meldungen“ mitpflegen).
 
 ## Code-Stil
 

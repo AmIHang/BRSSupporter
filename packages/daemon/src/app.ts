@@ -10,6 +10,7 @@ import express from 'express';
 import { z } from 'zod';
 import { errorText } from './bsm-edge.js';
 import { DEFAULT_ALLOWED_ORIGINS, hostCheck, originCheck } from './http/security.js';
+import type { UpdateInfo } from './update.js';
 
 export interface SyncState {
   lastRunAt: string | null;
@@ -28,6 +29,10 @@ export interface AppDeps {
   /** Takes the ticket over in BSM (assigns it to the stored BSM account); user-facing errors. */
   takeOver: (number: string) => Promise<void>;
   syncState: () => SyncState;
+  /** Installed version ("dev" when started by hand). */
+  version: string;
+  /** Newer release on GitHub? */
+  checkUpdate: () => Promise<UpdateInfo>;
   /** A stored account was saved or removed: its old session must not be used any more. */
   accountChanged: (system: AccountSystem) => void;
   /** Checks a TFS Git link and completes it (project, wiki); rejects with a user-facing reason. */
@@ -88,6 +93,13 @@ export function createApp(deps: AppDeps): express.Express {
   app.use(hostCheck(deps.getPort));
   app.use(originCheck(deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS));
 
+  /** The app checks with this that the daemon on the port is ours before it starts one. */
+  app.get('/api/health', (_req, res) => {
+    res.json({ ok: true, app: 'BRSSupporter', version: deps.version });
+  });
+  app.get('/api/update', async (_req, res) => {
+    res.json(await deps.checkUpdate());
+  });
   app.get('/api/tickets', (_req, res) => {
     res.json({ tickets: deps.core.tickets.list() });
   });

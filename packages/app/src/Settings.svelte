@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { api, type Project, type Settings } from './lib/api';
   import Account from './Account.svelte';
+  import { applyTheme, savedTheme, type Theme } from './lib/theme';
   import { customerColor, textOn } from './lib/colors';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -175,6 +176,18 @@
   {#if message}
     <p class:error={message.error} class="flash">{message.text}</p>
   {/if}
+
+  <section>
+    <h3>Darstellung</h3>
+    <label class="inline">
+      Design
+      <select value={savedTheme()} onchange={(e) => applyTheme(e.currentTarget.value as Theme)}>
+        <option value="system">System</option>
+        <option value="light">Hell</option>
+        <option value="dark">Dunkel</option>
+      </select>
+    </label>
+  </section>
 
   <Account
     system="bsm"

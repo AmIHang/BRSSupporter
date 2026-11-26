@@ -35,6 +35,13 @@ function setup(takeOver: (number: string) => Promise<void> = async () => undefin
       otmaError: null,
       running: false,
     }),
+    version: '0.1.0',
+    checkUpdate: async () => ({
+      current: '0.1.0',
+      latest: '0.2.0',
+      url: 'https://github.com/AmIHang/BRSSupporter/releases/tag/v0.2.0',
+      available: true,
+    }),
     accountChanged: (system) => void changed.push(system),
     // Fake TFS: refuses TFVC, completes the short form <collection>/_git/<repo> with project = repo.
     resolveRepo: async (url) => {
@@ -59,6 +66,14 @@ const dir = mkdtempSync(join(tmpdir(), 'brssupporter-test-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('REST', () => {
+  it('answers health and update for the app', async () => {
+    const { app } = setup();
+    const health = await request(app).get('/api/health').set('Host', '127.0.0.1:47910');
+    expect(health.body).toEqual({ ok: true, app: 'BRSSupporter', version: '0.1.0' });
+    const update = await request(app).get('/api/update').set('Host', '127.0.0.1:47910');
+    expect(update.body).toMatchObject({ latest: '0.2.0', available: true });
+  });
+
   it('lists tickets', async () => {
     const res = await request(setup().app).get('/api/tickets').set('Host', '127.0.0.1:47910');
     expect(res.status).toBe(200);

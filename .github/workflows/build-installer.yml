@@ -1,0 +1,62 @@
+name: Build installer
+
+# v* tags publish a GitHub release with the installer (the app's update check looks there).
+# Test builds without a release: start it by hand.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write # create the GitHub release for v* tags
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version from "packageManager" in package.json
+
+      # The installer ships the node.exe of this runner (scripts/build-sidecar.mjs), so use LTS.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/app/src-tauri -> target
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      # Release builds take their version from the tag (v1.2.3 -> 1.2.3): the app hands it to the
+      # daemon, which compares it with the latest release.
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          node -e "const f='packages/app/src-tauri/tauri.conf.json';const fs=require('fs');const c=JSON.parse(fs.readFileSync(f,'utf8'));c.version=process.argv[1];fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n')" "$version"
+
+      # Builds the sidecar runtime (daemon, native modules, node.exe) and the NSIS installer.
+      - run: pnpm --filter @brssupporter/app tauri:build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BRSSupporter-installer
+          path: packages/app/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packages/app/src-tauri/target/release/bundle/nsis/*-setup.exe
+          generate_release_notes: true

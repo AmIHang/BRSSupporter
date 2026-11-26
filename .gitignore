@@ -14,6 +14,9 @@ coverage/
 # Tauri / Rust
 packages/app/src-tauri/target/
 packages/app/src-tauri/gen/
+# Built by scripts/build-sidecar.mjs
+packages/app/src-tauri/binaries/
+packages/app/src-tauri/resources/runtime/
 
 .claude/worktrees/
 .claude/settings.local.json

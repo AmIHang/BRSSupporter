@@ -22,40 +22,40 @@
   --chip-red-fg: #ffffff;
   --chip-green-bg: #dafbe1;
   --chip-green-fg: #116329;
-  color-scheme: light dark;
+  color-scheme: light;
   font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.4;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1b1d21;
-    --bg-soft: #24272c;
-    --fg: #e6e8eb;
-    --muted: #9198a1;
-    --border: #353a41;
-    /* Dark enough for white text on chips and the primary button (contrast ≥ 4.5:1). */
-    --accent: #8957e5;
-    --danger: #ff6b6b;
-    --ok: #3fb950;
-    --chip: #2d3138;
-    --chip-purple-bg: #8957e5;
-    --chip-purple-fg: #ffffff;
-    --chip-blue-bg: #1b3a5c;
-    --chip-blue-fg: #9cd1ff;
-    --chip-orange-bg: #db6d28;
-    --chip-orange-fg: #ffffff;
-    --chip-teal-bg: #12423b;
-    --chip-teal-fg: #7ee2d0;
-    --chip-pink-bg: #4a1730;
-    --chip-pink-fg: #ff9fcb;
-    /* White text stays readable (contrast >= 4.5:1). */
-    --chip-red-bg: #da3633;
-    --chip-red-fg: #ffffff;
-    --chip-green-bg: #1b4721;
-    --chip-green-fg: #7ee787;
-  }
+/* Set by src/lib/theme.ts: the user's choice, or the Windows setting ("System", the default). */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1b1d21;
+  --bg-soft: #24272c;
+  --fg: #e6e8eb;
+  --muted: #9198a1;
+  --border: #353a41;
+  /* Dark enough for white text on chips and the primary button (contrast ≥ 4.5:1). */
+  --accent: #8957e5;
+  --danger: #ff6b6b;
+  --ok: #3fb950;
+  --chip: #2d3138;
+  --chip-purple-bg: #8957e5;
+  --chip-purple-fg: #ffffff;
+  --chip-blue-bg: #1b3a5c;
+  --chip-blue-fg: #9cd1ff;
+  --chip-orange-bg: #db6d28;
+  --chip-orange-fg: #ffffff;
+  --chip-teal-bg: #12423b;
+  --chip-teal-fg: #7ee2d0;
+  --chip-pink-bg: #4a1730;
+  --chip-pink-fg: #ff9fcb;
+  /* White text stays readable (contrast >= 4.5:1). */
+  --chip-red-bg: #da3633;
+  --chip-red-fg: #ffffff;
+  --chip-green-bg: #1b4721;
+  --chip-green-fg: #7ee787;
 }
 
 * {

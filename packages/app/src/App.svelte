@@ -1,7 +1,7 @@
 <script lang="ts">
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { onMount } from 'svelte';
-  import { api, type SyncState, type Ticket } from './lib/api';
+  import { api, type SyncState, type Ticket, type UpdateInfo } from './lib/api';
   import { customerColor, defaultColor, textOn } from './lib/colors';
   import { OTMA_TICKET_BASE, otmaResponsiblePerson, otmaStatusLabel } from './lib/otma';
   import { savedAlwaysOnTop, setAlwaysOnTop } from './lib/pin';
@@ -164,13 +164,27 @@
     ),
   );
 
+  /** Installed version and newer release on GitHub (the daemon checks at most every 6 h). */
+  let version = $state<string | null>(null);
+  let update = $state<UpdateInfo | null>(null);
+  async function checkVersion() {
+    try {
+      [version, update] = await Promise.all([api.version(), api.update()]);
+    } catch {
+      // Daemon not reachable: the list shows that already.
+    }
+  }
+
   onMount(() => {
     if (pinned) void setAlwaysOnTop(true).catch(() => (pinned = false));
     void refresh();
+    void checkVersion();
     const timer = setInterval(refresh, 15_000);
+    const versionTimer = setInterval(checkVersion, 60 * 60_000);
     window.addEventListener('focus', refresh);
     return () => {
       clearInterval(timer);
+      clearInterval(versionTimer);
       window.removeEventListener('focus', refresh);
     };
   });
@@ -180,7 +194,10 @@
   <Settings onclose={closeSettings} />
 {:else}
 <header>
-  <h1>BSM-Tickets</h1>
+  <h1>
+    BSM-Tickets
+    {#if version}<span class="version muted" title="Installierte Version">v{version}</span>{/if}
+  </h1>
   <div class="sync">
     {#if sync?.lastError}<span class="error" title={sync.lastError}>BSM-Sync fehlgeschlagen</span>{/if}
     {#if sync?.otmaError}<span class="error" title={sync.otmaError}>OTMA-Sync fehlgeschlagen</span>{/if}
@@ -221,6 +238,12 @@
   </div>
 </header>
 
+{#if update?.available && update.url}
+  <p class="login banner">
+    Neue Version {update.latest} verfügbar (installiert: {update.current}).
+    <button onclick={() => update?.url && openUrl(update.url)}>Herunterladen</button>
+  </p>
+{/if}
 {#if error}
   <p class="error banner">{error}</p>
 {/if}
@@ -432,6 +455,11 @@
   h1 {
     font-size: 16px;
     margin: 0;
+  }
+  .version {
+    font-size: 11px;
+    font-weight: normal;
+    margin-left: 4px;
   }
   .sync {
     display: flex;

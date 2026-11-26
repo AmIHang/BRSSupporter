@@ -15,6 +15,7 @@ import { BsmLoginRequiredError, edgeSessions, errorText } from './bsm-edge.js';
 import { DEFAULT_ALLOWED_ORIGINS } from './http/security.js';
 import { takeOverTicket } from './takeover.js';
 import { powershellTfsGet, readRepoInfo, resolveTfsRepo } from './tfs.js';
+import { updateChecker } from './update.js';
 
 const { values: args } = parseArgs({
   options: {
@@ -28,6 +29,9 @@ const { values: args } = parseArgs({
 
 // Logs go to stderr, like in BRSOrganizer.
 const log = (msg: string) => console.error(`[${new Date().toISOString()}] ${msg}`);
+
+/** Set by the app when it starts the bundled daemon (its version from tauri.conf.json). */
+const VERSION = process.env.BRSSUPPORTER_VERSION ?? 'dev';
 
 const dir = args['data-dir'] ?? dataDir();
 mkdirSync(dir, { recursive: true });
@@ -119,6 +123,12 @@ const app = createApp({
   sync,
   takeOver,
   syncState: () => ({ ...state }),
+  version: VERSION,
+  // Started by hand (dev): nothing to compare against.
+  checkUpdate:
+    VERSION === 'dev'
+      ? async () => ({ current: VERSION, latest: null, url: null, available: false })
+      : updateChecker(VERSION),
   accountChanged: (system) => {
     log(`${system} account changed`);
     // The new BSM account is tried right away, so its result shows in the list.

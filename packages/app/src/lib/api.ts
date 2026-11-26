@@ -128,7 +128,19 @@ async function call<T>(path: string, method = 'GET', body?: unknown): Promise<T>
   return (res.status === 204 ? undefined : res.json()) as Promise<T>;
 }
 
+export interface UpdateInfo {
+  current: string;
+  /** Newest release on GitHub; null = could not be checked. */
+  latest: string | null;
+  /** Its release page. */
+  url: string | null;
+  available: boolean;
+}
+
 export const api = {
+  /** Installed version ("dev" when the daemon was started by hand). */
+  version: () => call<{ version: string }>('/api/health').then((r) => r.version),
+  update: () => call<UpdateInfo>('/api/update'),
   tickets: () => call<{ tickets: Ticket[] }>('/api/tickets').then((r) => r.tickets),
   syncState: () => call<SyncState>('/api/sync'),
   /** full: everything instead of the changes since the last run. */
