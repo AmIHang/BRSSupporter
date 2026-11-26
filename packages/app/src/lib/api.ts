@@ -12,13 +12,43 @@ export interface Ticket {
   createDate: string;
   changeDate: string;
   firstSeenAt: string;
-  /** OTMA ticket of the main work package (looked up once in process). */
+  /** OTMA ticket of the main work package (looked up while new or in process). */
   otmaNumber: string | null;
-  /** "Verantwortlich" of the OTMA ticket, refreshed in batches while in process. */
+  /** "Verantwortlich" of the OTMA ticket, refreshed with every sync while in process. */
   otmaResponsible: string | null;
+  /** Status of the OTMA ticket, refreshed with the responsible person. */
+  otmaStatus: string | null;
   customer: string | null;
   /** Chosen color of the customer; null = computed (lib/colors.ts). */
   customerColor: string | null;
+  /** Wiki and TV ("Technical Lead") of the project's repository, else the customer's. */
+  wikiUrl: string | null;
+  technicalLead: string | null;
+  /** Latest release per system (heading on the wiki's Releases page). */
+  releases: Release[];
+  /** Who committed to or opened pull requests into the default branch in the last month. */
+  contributors: Contributor[];
+  /** Affected installation from BSM, e.g. "PROD". */
+  installation: string | null;
+}
+
+export interface Contributor {
+  name: string;
+  /** Windows account in capitals, e.g. "GRA". */
+  account: string | null;
+  /** Commits on the default branch (main/master). */
+  commits: number;
+  pullRequests: number;
+  /** ISO time */
+  lastAt: string;
+}
+
+export interface Release {
+  system: string;
+  version: string;
+  /** YYYY-MM-DD */
+  date: string;
+  url: string | null;
 }
 
 export interface SyncState {
@@ -31,6 +61,8 @@ export interface SyncState {
     statusChanged: string[];
   } | null;
   lastError: string | null;
+  /** Error of the OTMA part of the last sync. */
+  otmaError: string | null;
   running: boolean;
 }
 
@@ -42,6 +74,26 @@ export interface Project {
   customer: string | null;
   customerColor: string | null;
   hidden: boolean;
+  /** TFS Git repository of the project itself (with its wiki); null = the customer's applies. */
+  repoUrl: string | null;
+  wikiUrl: string | null;
+  customerRepoUrl: string | null;
+  customerWikiUrl: string | null;
+  technicalLead: string | null;
+  customerTechnicalLead: string | null;
+  /** The project's own repository, else the customer's; wiki and TV go with it. */
+  effectiveRepoUrl: string | null;
+  effectiveWikiUrl: string | null;
+  effectiveTechnicalLead: string | null;
+}
+
+/** A repository link as the daemon stored it: completed, with its project's wiki. */
+export interface RepoLink {
+  repoUrl: string;
+  wikiUrl: string | null;
+  technicalLead: string | null;
+  releases: Release[];
+  contributors: Contributor[];
 }
 
 export type AccountSystem = 'bsm' | 'otma';
@@ -55,8 +107,6 @@ export interface Account {
 export interface Settings {
   bsmFilter: Record<string, unknown>;
   syncIntervalMinutes: number;
-  otmaResponsibleIntervalMinutes: number;
-  otmaResponsibleBatchSize: number;
 }
 
 const BASE = 'http://127.0.0.1:47910';
@@ -102,6 +152,18 @@ export const api = {
     }),
   setCustomerHidden: (customer: string, hidden: boolean) =>
     call<unknown>('/api/customers', 'PATCH', { customer, hidden }),
+  /** null = no link (projects without their own have none either). */
+  setCustomerRepoUrl: (customer: string, repoUrl: string | null) =>
+    call<{ repo: RepoLink | null }>('/api/customers', 'PATCH', { customer, repoUrl }).then(
+      (r) => r.repo,
+    ),
+  /** null = the customer's link applies. */
+  setProjectRepoUrl: (p: Project, repoUrl: string | null) =>
+    call<{ repo: RepoLink | null }>('/api/projects', 'PATCH', {
+      applicationName: p.applicationName,
+      name: p.name,
+      repoUrl,
+    }).then((r) => r.repo),
   /** null = back to the computed color. */
   setCustomerColor: (customer: string, color: string | null) =>
     call<unknown>('/api/customers', 'PATCH', { customer, color }),

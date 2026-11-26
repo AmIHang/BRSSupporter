@@ -16,23 +16,13 @@ export function dataDir(): string {
 export const settingsSchema = z.object({
   /** Which BSM tickets are monitored (queryIndications filter); default all, any status. */
   bsmFilter: bsmFilterSchema.default({}),
-  /** How often the delta is fetched from BSM (the list refreshes with it). */
+  /** How often the delta is fetched from BSM, the OTMA part with it (the list refreshes too). */
   syncIntervalMinutes: z.number().int().min(1).max(1440).default(5),
-  /** How often a batch of OTMA responsible persons is refreshed (working hours only). */
-  otmaResponsibleIntervalMinutes: z.number().int().min(1).max(1440).default(5),
-  /** Tickets per batch; small batches spread the OTMA requests over the day. */
-  otmaResponsibleBatchSize: z.number().int().min(1).max(100).default(5),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 
 /** What the UI may change. */
-export const settingsPatchSchema = settingsSchema
-  .pick({
-    syncIntervalMinutes: true,
-    otmaResponsibleIntervalMinutes: true,
-    otmaResponsibleBatchSize: true,
-  })
-  .partial();
+export const settingsPatchSchema = settingsSchema.pick({ syncIntervalMinutes: true }).partial();
 
 /** Validates `patch`, writes the merged settings (atomically) and returns them. */
 export function saveSettings(dir: string, patch: unknown): Settings {

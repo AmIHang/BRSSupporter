@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCore, type BsmFetch } from '../src/index.js';
-import { lookupOtmaResponsible } from '../src/otma.js';
+import { lookupOtmaTicket } from '../src/otma.js';
 
 const ticket = (number: string, status: string) => ({
   number,
@@ -36,25 +36,32 @@ function fakeOtma(people: Record<string, string>) {
     viewed.push(key);
     return {
       ui: {
-        form: [{ items: [{ feat: 'cfResponsiblePersonDisplayText', value: people[key] }] }],
+        form: [
+          {
+            items: [
+              { feat: 'cfResponsiblePersonDisplayText', value: people[key] },
+              { feat: 'Status', value: 'In Arbeit' },
+            ],
+          },
+        ],
       },
     };
   };
   return { fetch, viewed };
 }
 
-describe('refreshOtmaResponsibles', () => {
-  it('works in batches through in-process tickets with OTMA, longest due first', async () => {
-    let now = new Date('2026-11-18T10:00:00Z');
-    const core = createCore({ databaseFile: ':memory:', clock: { now: () => now } });
+describe('refreshOtmaInfo', () => {
+  it('refreshes all tickets in process plus the given ones, each with an OTMA ticket', async () => {
+    const core = createCore({ databaseFile: ':memory:' });
     core.tickets.applySnapshot(
       [
         ticket('A1', 'inprocess'),
         ticket('B2', 'inprocess'),
-        ticket('C3', 'inprocess'),
-        ticket('D4', 'new'),
+        ticket('C3', 'new'), // only when given (status changed)
+        ticket('D4', 'delivered'), // only when given
         ticket('E5', 'inprocess'), // no OTMA ticket
         { ...ticket('F6', 'inprocess'), applicationName: 'X', projectName: 'Hidden' },
+        ticket('G7', 'completed'), // neither in process nor given
       ],
       [],
     );
@@ -64,36 +71,32 @@ describe('refreshOtmaResponsibles', () => {
     core.tickets.setOtmaNumber('D4', '104');
     core.tickets.setOtmaNumber('E5', null);
     core.tickets.setOtmaNumber('F6', '106');
+    core.tickets.setOtmaNumber('G7', '107');
     core.projects.setHidden('X', 'Hidden', true);
     const otma = fakeOtma({
       '101': 'Max Muster',
       '102': 'Kein Verantwortlicher zugewiesen',
-      '103': 'Erika Beispiel',
+      '104': 'Erika Beispiel',
     });
 
-    let pauses = 0;
-    const pause = async () => void pauses++;
-    expect(await core.refreshOtmaResponsibles(otma.fetch, 2, pause)).toEqual({
-      checked: 2,
-      changed: 1,
-    });
-    expect(pauses).toBe(1); // only between two tickets
-    now = new Date('2026-11-18T10:15:00Z');
-    expect(await core.refreshOtmaResponsibles(otma.fetch, 2)).toEqual({ checked: 2, changed: 1 });
-    // Never looked up first (C3 in the second batch), then the oldest: A1/B2 rotate again.
-    expect(otma.viewed.slice(2)).toEqual(['103', '101']);
-    const responsible = Object.fromEntries(
-      core.tickets.list().map((t) => [t.number, t.otmaResponsible]),
+    // A1 got a responsible, B2 none but a status, D4 both: all changed.
+    expect(await core.refreshOtmaInfo(otma.fetch, ['D4'])).toEqual({ checked: 3, changed: 3 });
+    expect(otma.viewed.sort()).toEqual(['101', '102', '104']);
+    // Same again: checked, nothing changed.
+    expect(await core.refreshOtmaInfo(otma.fetch)).toEqual({ checked: 2, changed: 0 });
+    const info = Object.fromEntries(
+      core.tickets.list().map((t) => [t.number, [t.otmaResponsible, t.otmaStatus]]),
     );
-    expect(responsible).toEqual({
-      A1: 'Max Muster',
-      B2: null,
-      C3: 'Erika Beispiel',
-      D4: null,
-      E5: null,
+    expect(info).toEqual({
+      A1: ['Max Muster', 'In Arbeit'],
+      B2: [null, 'In Arbeit'],
+      C3: [null, null],
+      D4: ['Erika Beispiel', 'In Arbeit'],
+      E5: [null, null],
+      G7: [null, null],
     });
-    expect(otma.viewed).not.toContain('104');
     expect(otma.viewed).not.toContain('106');
+    expect(otma.viewed).not.toContain('107');
   });
 
   it('remembers where a view is: one request per later check, the jump again when stale', async () => {
@@ -120,12 +123,13 @@ describe('refreshOtmaResponsibles', () => {
       }
       return { ui: { form: [{ feat: 'cfResponsiblePersonDisplayText', value: 'GRA' }] } };
     };
-    expect(await lookupOtmaResponsible(fetch, '777')).toBe('GRA');
-    expect(await lookupOtmaResponsible(fetch, '777')).toBe('GRA');
+    const responsible = async () => (await lookupOtmaTicket(fetch, '777')).responsible;
+    expect(await responsible()).toBe('GRA');
+    expect(await responsible()).toBe('GRA');
     expect(calls).toEqual(['JumpToOrderProcess', 'view', 'view']);
     calls.length = 0;
     stale = true;
-    expect(await lookupOtmaResponsible(fetch, '777')).toBe('GRA');
+    expect(await responsible()).toBe('GRA');
     expect(calls).toEqual(['view', 'JumpToOrderProcess', 'view']);
   });
 
@@ -135,7 +139,7 @@ describe('refreshOtmaResponsibles', () => {
     core.tickets.setOtmaNumber('A1', '999'); // deleted in OTMA
     core.tickets.setOtmaNumber('B2', '102');
     const otma = fakeOtma({ '102': 'Erika Beispiel' });
-    expect(await core.refreshOtmaResponsibles(otma.fetch, 5)).toEqual({ checked: 2, changed: 1 });
+    expect(await core.refreshOtmaInfo(otma.fetch)).toEqual({ checked: 2, changed: 1 });
     expect(core.tickets.list().map((t) => t.otmaResponsible)).toEqual([null, 'Erika Beispiel']);
   });
 
@@ -151,7 +155,7 @@ describe('refreshOtmaResponsibles', () => {
       if (++calls > 2) throw new Error('OTMA: nicht angemeldet');
       return ok(path, body);
     };
-    await expect(core.refreshOtmaResponsibles(failing, 10)).rejects.toThrow('nicht angemeldet');
+    await expect(core.refreshOtmaInfo(failing)).rejects.toThrow('nicht angemeldet');
     expect(core.tickets.list().filter((t) => t.otmaResponsible)).toHaveLength(1);
   });
 });

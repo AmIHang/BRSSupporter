@@ -32,9 +32,23 @@ function setup(takeOver: (number: string) => Promise<void> = async () => undefin
       lastRunAt: null,
       lastResult: null,
       lastError: null,
+      otmaError: null,
       running: false,
     }),
     accountChanged: (system) => void changed.push(system),
+    // Fake TFS: refuses TFVC, completes the short form <collection>/_git/<repo> with project = repo.
+    resolveRepo: async (url) => {
+      if (url.includes('_versionControl')) throw new Error('TFVC-Links sind alter Code');
+      const m = /^(.*\/tfs\/[^/]+)(?:\/([^/]+))?\/_git\/([^/]+)/.exec(url)!;
+      const project = m[2] ?? m[3]!;
+      return {
+        repoUrl: `${m[1]}/${project}/_git/${m[3]}`,
+        wikiUrl: `${m[1]}/${project}/_wiki`,
+        technicalLead: `TV ${project}`,
+        releases: [],
+        contributors: [],
+      };
+    },
     getSettings: () => loadSettings(dir),
     updateSettings: (patch) => saveSettings(dir, patch),
   });
@@ -76,6 +90,58 @@ describe('REST', () => {
     expect(res.body.tickets).toEqual([]);
   });
 
+  it("sets repo links checked by TFS; a project without its own takes the customer's", async () => {
+    const { app, core } = setup();
+    const patch = (path: string, body: object) =>
+      request(app).patch(path).set('Host', '127.0.0.1:47910').send(body);
+    core.tickets.applySnapshot([], [], [{ name: 'ELL BRS', customer: 'ELL' }]);
+    const project = { applicationName: 'ELL BRS', name: 'ELL' };
+    const C = 'https://tfs.boomsoftware.com/tfs/boom';
+    const repo = () => core.projects.list()[0]!;
+
+    // The short form is stored completed, with the project's wiki.
+    const res = await patch('/api/customers', { customer: 'ELL', repoUrl: `${C}/_git/ELL` });
+    expect(res.status).toBe(200);
+    expect(res.body.repo).toEqual({
+      repoUrl: `${C}/ELL/_git/ELL`,
+      wikiUrl: `${C}/ELL/_wiki`,
+      technicalLead: 'TV ELL',
+      releases: [],
+      contributors: [],
+    });
+    expect(repo()).toMatchObject({
+      repoUrl: null,
+      effectiveRepoUrl: `${C}/ELL/_git/ELL`,
+      effectiveWikiUrl: `${C}/ELL/_wiki`,
+    });
+    expect(
+      (await patch('/api/projects', { ...project, repoUrl: `${C}/Core/_git/Core` })).status,
+    ).toBe(200);
+    expect(repo()).toMatchObject({
+      effectiveRepoUrl: `${C}/Core/_git/Core`,
+      effectiveWikiUrl: `${C}/Core/_wiki`,
+    });
+    expect((await patch('/api/projects', { ...project, repoUrl: null })).status).toBe(200);
+    expect(repo()).toMatchObject({
+      repoUrl: null,
+      wikiUrl: null,
+      effectiveRepoUrl: `${C}/ELL/_git/ELL`,
+    });
+
+    // TFS refuses (e.g. TFVC): 400 with the reason, nothing saved.
+    const tfvc = await patch('/api/projects', { ...project, repoUrl: `${C}/ELL/_versionControl` });
+    expect(tfvc.status).toBe(400);
+    expect(tfvc.body.error).toContain('TFVC');
+    expect(repo().repoUrl).toBeNull();
+    expect(
+      (await patch('/api/projects', { ...project, repoUrl: 'javascript:alert(1)' })).status,
+    ).toBe(400);
+    expect((await patch('/api/projects', { ...project, name: 'X', repoUrl: null })).status).toBe(
+      404,
+    );
+    expect((await patch('/api/projects', project)).status).toBe(400);
+  });
+
   it('hides a whole customer', async () => {
     const { app, core } = setup();
     const patch = (body: object) =>
@@ -102,17 +168,6 @@ describe('REST', () => {
     expect((await patch({ syncIntervalMinutes: 15 })).body).toEqual({
       syncIntervalMinutes: 15,
       bsmFilter: {},
-      otmaResponsibleIntervalMinutes: 5,
-      otmaResponsibleBatchSize: 5,
-    });
-    expect((await patch({ otmaResponsibleBatchSize: 0 })).status).toBe(400);
-    expect((await patch({ otmaResponsibleBatchSize: 101 })).status).toBe(400);
-    expect(
-      (await patch({ otmaResponsibleIntervalMinutes: 10, otmaResponsibleBatchSize: 8 })).body,
-    ).toMatchObject({
-      syncIntervalMinutes: 15,
-      otmaResponsibleIntervalMinutes: 10,
-      otmaResponsibleBatchSize: 8,
     });
     const res = await request(app).get('/api/settings').set('Host', '127.0.0.1:47910');
     expect(res.body.syncIntervalMinutes).toBe(15);

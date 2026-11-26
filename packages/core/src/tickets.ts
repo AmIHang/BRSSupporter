@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray, isNull, ne, not, or, sql } from 'drizzle-orm';
+import type { SQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { BsmApplication, BsmIndication, BsmUser } from './bsm.js';
 import type { Clock } from './clock.js';
 import type { Db } from './db/open.js';
@@ -6,6 +7,8 @@ import { applications, customers, projects, tickets } from './db/schema.js';
 
 /** Project name of the entry standing for an application's tickets without project. */
 export const NO_PROJECT = '';
+/** BSM statuses before "delivered": their OTMA part is kept up to date. */
+export const OPEN_STATUSES = ['new', 'inprocess'];
 /** Key of the pseudo group of all NO_PROJECT entries (cannot collide with a customer name). */
 const NO_PROJECT_GROUP = '\0no-project';
 
@@ -19,7 +22,75 @@ export interface Project {
   /** User-chosen color of the customer ("#rrggbb"); null = computed by the app. */
   customerColor: string | null;
   hidden: boolean;
+  /** TFS Git repository set for the project itself; null = the customer's applies. */
+  repoUrl: string | null;
+  /** Wiki of that repository's TFS project. */
+  wikiUrl: string | null;
+  /** Repository and wiki set for the customer. */
+  customerRepoUrl: string | null;
+  customerWikiUrl: string | null;
+  /** TV ("Technical Lead") from the wiki, of the project's own repository / the customer's. */
+  technicalLead: string | null;
+  customerTechnicalLead: string | null;
+  /** What applies: the project's own repository (with its wiki and TV), else the customer's. */
+  effectiveRepoUrl: string | null;
+  effectiveWikiUrl: string | null;
+  effectiveTechnicalLead: string | null;
 }
+
+/** Latest release of one system (e.g. "PROD") from a wiki's Releases page. */
+export interface Release {
+  system: string;
+  version: string;
+  /** YYYY-MM-DD as written in the wiki. */
+  date: string;
+  /** Link of the version (usually the build). */
+  url: string | null;
+}
+
+/** Someone active in a repository in the last month (default branch: commits, pull requests). */
+export interface Contributor {
+  name: string;
+  /** Windows account in capitals, e.g. "GRA". */
+  account: string | null;
+  /** Commits on the default branch (main/master). */
+  commits: number;
+  pullRequests: number;
+  /** Latest activity, ISO time. */
+  lastAt: string;
+}
+
+/** What is read about a repository: TV and latest releases (wiki), recent contributors. */
+export interface RepoInfo {
+  technicalLead: string | null;
+  releases: Release[];
+  contributors: Contributor[];
+}
+
+/** A checked TFS Git repository link with its project's wiki and what was read there. */
+export interface RepoLink extends RepoInfo {
+  repoUrl: string;
+  wikiUrl: string | null;
+}
+
+/**
+ * Repository data that applies to a project (left-joined with its customer): the project's own
+ * when it has a repository, else the customer's – never mixed.
+ */
+const applying = <T>(own: SQLiteColumn, customer: SQLiteColumn) =>
+  sql<T | null>`case when ${projects.repoUrl} is not null then ${own} else ${customer} end`;
+
+const repoColumns = (repo: RepoLink | null) => ({
+  repoUrl: repo?.repoUrl ?? null,
+  wikiUrl: repo?.wikiUrl ?? null,
+  ...infoColumns(repo),
+});
+const infoColumns = (info: RepoInfo | null) => ({
+  technicalLead: info?.technicalLead ?? null,
+  releases: info ? JSON.stringify(info.releases) : null,
+  contributors: info ? JSON.stringify(info.contributors) : null,
+});
+const parsed = <T>(json: string | null): T[] => (json ? (JSON.parse(json) as T[]) : []);
 
 export class ProjectService {
   constructor(private readonly db: Db) {}
@@ -32,6 +103,15 @@ export class ProjectService {
         customer: applications.customer,
         customerColor: customers.color,
         hidden: projects.hidden,
+        repoUrl: projects.repoUrl,
+        wikiUrl: projects.wikiUrl,
+        customerRepoUrl: customers.repoUrl,
+        customerWikiUrl: customers.wikiUrl,
+        technicalLead: projects.technicalLead,
+        customerTechnicalLead: customers.technicalLead,
+        effectiveRepoUrl: applying<string>(projects.repoUrl, customers.repoUrl),
+        effectiveWikiUrl: applying<string>(projects.wikiUrl, customers.wikiUrl),
+        effectiveTechnicalLead: applying<string>(projects.technicalLead, customers.technicalLead),
       })
       .from(projects)
       .leftJoin(applications, eq(applications.name, projects.applicationName))
@@ -65,6 +145,44 @@ export class ProjectService {
     );
   }
 
+  /** Sets or removes (null) the customer's repository and wiki. False for unknown customers. */
+  setCustomerRepo(customer: string, repo: RepoLink | null): boolean {
+    return (
+      this.db.update(customers).set(repoColumns(repo)).where(eq(customers.name, customer)).run()
+        .changes > 0
+    );
+  }
+
+  /** Sets or removes (null: the customer's applies) the project's repository and wiki. */
+  setRepo(applicationName: string, name: string, repo: RepoLink | null): boolean {
+    return (
+      this.db
+        .update(projects)
+        .set(repoColumns(repo))
+        .where(and(eq(projects.applicationName, applicationName), eq(projects.name, name)))
+        .run().changes > 0
+    );
+  }
+
+  /** All stored repositories (customers and projects) with their wiki, for the hourly refresh. */
+  repos(): { repoUrl: string; wikiUrl: string | null }[] {
+    const of = (t: typeof customers | typeof projects) =>
+      this.db
+        .selectDistinct({ repoUrl: sql<string>`${t.repoUrl}`, wikiUrl: t.wikiUrl })
+        .from(t)
+        .where(sql`${t.repoUrl} is not null`)
+        .all();
+    const all = [...of(customers), ...of(projects)];
+    return [...new Map(all.map((r) => [r.repoUrl, r])).values()];
+  }
+
+  /** What was read about `repoUrl`, for every customer and project with that repository. */
+  setRepoInfo(repoUrl: string, info: RepoInfo): void {
+    const set = infoColumns(info);
+    this.db.update(customers).set(set).where(eq(customers.repoUrl, repoUrl)).run();
+    this.db.update(projects).set(set).where(eq(projects.repoUrl, repoUrl)).run();
+  }
+
   /** Returns false when the project is unknown. */
   setHidden(applicationName: string, name: string, hidden: boolean): boolean {
     const res = this.db
@@ -91,11 +209,22 @@ export interface Ticket {
   firstSeenAt: string;
   /** OTMA ticket of the main work package; null while new, unknown or without one. */
   otmaNumber: string | null;
-  /** "Verantwortlich" of the OTMA ticket; refreshed in batches while in process. */
+  /** "Verantwortlich" of the OTMA ticket; refreshed while the ticket is open. */
   otmaResponsible: string | null;
+  /** Status of the OTMA ticket; refreshed together with the responsible person. */
+  otmaStatus: string | null;
   customer: string | null;
   /** User-chosen color of the customer; null = computed by the app. */
   customerColor: string | null;
+  /** Wiki, TV and latest releases that apply to the ticket's project (its own repository, else
+   * the customer's). */
+  wikiUrl: string | null;
+  technicalLead: string | null;
+  releases: Release[];
+  /** Who committed to or opened pull requests into the default branch in the last month. */
+  contributors: Contributor[];
+  /** Affected installation (system) as BSM names it, e.g. "PROD"; null = not set. */
+  installation: string | null;
 }
 
 export interface SyncResult {
@@ -139,8 +268,17 @@ export class TicketService {
           firstSeenAt: tickets.firstSeenAt,
           otmaNumber: tickets.otmaNumber,
           otmaResponsible: tickets.otmaResponsible,
+          otmaStatus: tickets.otmaStatus,
           customer: applications.customer,
           customerColor: customers.color,
+          wikiUrl: applying<string>(projects.wikiUrl, customers.wikiUrl),
+          technicalLead: applying<string>(projects.technicalLead, customers.technicalLead),
+          releases: applying<string>(projects.releases, customers.releases),
+          contributors: applying<string>(projects.contributors, customers.contributors),
+          // Not a column of its own: in the stored BSM answer for every ticket already.
+          installation: sql<
+            string | null
+          >`json_extract(${tickets.data}, '$.indication.installationName')`,
         })
         .from(tickets)
         .leftJoin(applications, eq(applications.name, tickets.applicationName))
@@ -154,11 +292,16 @@ export class TicketService {
           asc(tickets.number),
         )
         .all()
+        .map((t) => ({
+          ...t,
+          releases: parsed<Release>(t.releases),
+          contributors: parsed<Contributor>(t.contributors),
+        }))
     );
   }
 
   /**
-   * In-process tickets whose OTMA number was never looked up, or that are still without one and
+   * Open tickets (OPEN_STATUSES) whose OTMA number was never looked up, or that are still without one and
    * changed since (the main work package may have been set later). A found number is kept for
    * good. Closed tickets are not looked up. Most recently changed first.
    */
@@ -169,7 +312,7 @@ export class TicketService {
       .where(
         and(
           isNull(tickets.goneAt),
-          eq(tickets.status, 'inprocess'),
+          inArray(tickets.status, OPEN_STATUSES),
           or(
             isNull(tickets.otmaCheckedAt),
             and(isNull(tickets.otmaNumber), sql`${tickets.changeDate} > ${tickets.otmaCheckedAt}`),
@@ -189,45 +332,14 @@ export class TicketService {
       .run();
   }
 
-  /**
-   * Next batch of in-process tickets with an OTMA ticket whose responsible person is due:
-   * never looked up first, then the longest ago – so repeated batches rotate through all.
-   */
-  otmaResponsibleDue(
-    limit: number,
-  ): { number: string; otmaNumber: string; otmaResponsible: string | null }[] {
-    return (
-      this.db
-        .select({
-          number: tickets.number,
-          otmaNumber: sql<string>`${tickets.otmaNumber}`,
-          otmaResponsible: tickets.otmaResponsible,
-        })
-        .from(tickets)
-        // Only what the list shows: hidden projects would use up the batch for nothing.
-        .leftJoin(projects, projectOfTicket)
-        .where(
-          and(
-            isNull(tickets.goneAt),
-            projectShown,
-            eq(tickets.status, 'inprocess'),
-            sql`${tickets.otmaNumber} is not null`,
-          ),
-        )
-        .orderBy(
-          sql`${tickets.otmaResponsibleAt} is not null`,
-          asc(tickets.otmaResponsibleAt),
-          asc(tickets.number),
-        )
-        .limit(limit)
-        .all()
-    );
-  }
-
-  setOtmaResponsible(number: string, otmaResponsible: string | null): void {
+  setOtmaInfo(number: string, info: { responsible: string | null; status: string | null }): void {
     this.db
       .update(tickets)
-      .set({ otmaResponsible, otmaResponsibleAt: this.clock.now().toISOString() })
+      .set({
+        otmaResponsible: info.responsible,
+        otmaStatus: info.status,
+        otmaResponsibleAt: this.clock.now().toISOString(),
+      })
       .where(eq(tickets.number, number))
       .run();
   }

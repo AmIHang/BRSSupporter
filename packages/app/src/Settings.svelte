@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import { onMount } from 'svelte';
   import { api, type Project, type Settings } from './lib/api';
   import Account from './Account.svelte';
@@ -72,6 +73,45 @@
     }
   }
 
+  /** Input value → link; empty removes it. The daemon checks it with TFS and completes it. */
+  const repoValue = (v: string) => v.trim() || null;
+
+  async function saveCustomerRepo(g: CustomerGroup, value: string) {
+    const url = repoValue(value);
+    try {
+      const repo = await api.setCustomerRepoUrl(g.customer, url);
+      for (const p of g.all) {
+        p.customerRepoUrl = repo?.repoUrl ?? null;
+        p.customerWikiUrl = repo?.wikiUrl ?? null;
+        p.customerTechnicalLead = repo?.technicalLead ?? null;
+        if (!p.repoUrl) {
+          p.effectiveRepoUrl = p.customerRepoUrl;
+          p.effectiveWikiUrl = p.customerWikiUrl;
+          p.effectiveTechnicalLead = p.customerTechnicalLead;
+        }
+      }
+      flash(repo ? 'Repo-Link geprüft und gespeichert' : 'Repo-Link entfernt');
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function saveProjectRepo(p: Project, value: string) {
+    const url = repoValue(value);
+    try {
+      const repo = await api.setProjectRepoUrl(p, url);
+      p.repoUrl = repo?.repoUrl ?? null;
+      p.wikiUrl = repo?.wikiUrl ?? null;
+      p.technicalLead = repo?.technicalLead ?? null;
+      p.effectiveRepoUrl = repo ? repo.repoUrl : p.customerRepoUrl;
+      p.effectiveWikiUrl = repo ? repo.wikiUrl : p.customerWikiUrl;
+      p.effectiveTechnicalLead = repo ? repo.technicalLead : p.customerTechnicalLead;
+      flash(repo ? 'Repo-Link geprüft und gespeichert' : 'Repo-Link entfernt – der des Kunden gilt');
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   async function reloadAll() {
     try {
       await api.sync(true);
@@ -107,6 +147,24 @@
     }
   });
 </script>
+
+<!-- The wiki found for the repository that applies; inherited = the customer's (shown fainter). -->
+{#snippet wiki(url: string | null, inherited: boolean, tv: string | null)}
+  {#if url}
+    <button
+      type="button"
+      class="wiki"
+      class:inherited
+      title={`Wiki öffnen: ${url}`}
+      onclick={() => void openUrl(url)}>Wiki</button
+    >
+    <span class="wiki" class:inherited title="TV laut Wiki-Seite Security Architecture"
+      >TV: {tv ?? '–'}</span
+    >
+  {:else}
+    <span class="wiki none" title="Das TFS-Projekt hat kein Wiki">kein Wiki</span>
+  {/if}
+{/snippet}
 
 <div class="settings">
   <header>
@@ -151,7 +209,9 @@
       </label>
       <p class="hint muted">
         So oft holt BRSSupporter die Änderungen seit dem letzten Abruf (mit 5 Minuten Puffer) aus
-        BSM. Über ⟳ in der Liste geht es jederzeit sofort.
+        BSM. Gleich danach werden OTMA-Verantwortlicher und -Status aller Tickets „In Bearbeitung“
+        und aller Tickets mit geändertem BSM-Status aus OTMA geholt (OTMA-Konto). Über ⟳ in der
+        Liste geht es jederzeit sofort.
       </p>
       <div class="inline">
         <button type="button" onclick={() => void reloadAll()}>Alles neu laden</button>
@@ -162,44 +222,6 @@
       </p>
     </section>
 
-    <section>
-      <h3>OTMA-Verantwortliche</h3>
-      <label class="inline">
-        Alle
-        <input
-          type="number"
-          min="1"
-          max="1440"
-          value={settings.otmaResponsibleIntervalMinutes}
-          onchange={(e) => {
-            const v = e.currentTarget.valueAsNumber;
-            if (Number.isInteger(v) && v >= 1 && v <= 1440) {
-              void save({ otmaResponsibleIntervalMinutes: v });
-            } else flash('Bitte 1 bis 1440 Minuten angeben', true);
-          }}
-        />
-        Minuten
-        <input
-          type="number"
-          min="1"
-          max="100"
-          value={settings.otmaResponsibleBatchSize}
-          onchange={(e) => {
-            const v = e.currentTarget.valueAsNumber;
-            if (Number.isInteger(v) && v >= 1 && v <= 100) {
-              void save({ otmaResponsibleBatchSize: v });
-            } else flash('Bitte 1 bis 100 Tickets angeben', true);
-          }}
-        />
-        Tickets prüfen
-      </label>
-      <p class="hint muted">
-        Die OTMA-Nummer kommt beim BSM-Abruf mit (für Tickets „In Bearbeitung“). Die
-        Verantwortlichen werden mit dem OTMA-Konto geprüft: nur Mo–Fr 7–19 Uhr, mit einigen Sekunden
-        Pause zwischen den Tickets, noch nie geprüfte zuerst, danach die am längsten nicht geprüften.
-        Ändert sich der Status eines Tickets, wird es gleich geprüft.
-      </p>
-    </section>
   {/if}
 
   <section>
@@ -252,25 +274,54 @@
                 >
               {/if}
             </div>
+            <div class="customer-links">
+            <input
+              type="url"
+              class="repo customer-repo"
+              placeholder="TFS-Git-Link des Kunden, z. B. …/tfs/boom/_git/Northrail"
+              aria-label="TFS-Git-Link für {g.customer}"
+              value={g.all[0]?.customerRepoUrl ?? ''}
+              onchange={(e) => void saveCustomerRepo(g, e.currentTarget.value)}
+            />
+            {#if g.all[0]?.customerRepoUrl}
+              {@render wiki(g.all[0].customerWikiUrl, false, g.all[0].customerTechnicalLead)}
+            {/if}
+            </div>
             {/if}
           {:else}
             <span class="customer-name">(ohne Kunde)</span>
           {/if}
           <div class="projects">
             {#each g.shown as p (`${p.applicationName}/${p.name}`)}
-              <label class="check">
+              <div class="project">
+                <label class="check">
+                  <input
+                    type="checkbox"
+                    checked={p.hidden}
+                    onchange={(e) => void toggle(p, e.currentTarget.checked)}
+                  />
+                  {#if p.name === ''}
+                    {p.applicationName || '(ohne Applikation)'}
+                  {:else}
+                    {p.name}
+                    {#if p.applicationName !== p.name}<span class="muted">{p.applicationName}</span>{/if}
+                  {/if}
+                </label>
+                <!-- Empty: the customer's link applies, shown as placeholder. -->
                 <input
-                  type="checkbox"
-                  checked={p.hidden}
-                  onchange={(e) => void toggle(p, e.currentTarget.checked)}
+                  type="url"
+                  class="repo"
+                  placeholder={p.customerRepoUrl
+                    ? `vom Kunden: ${p.customerRepoUrl}`
+                    : 'TFS-Git-Link (leer: der des Kunden)'}
+                  aria-label="TFS-Git-Link für {p.name || p.applicationName}"
+                  value={p.repoUrl ?? ''}
+                  onchange={(e) => void saveProjectRepo(p, e.currentTarget.value)}
                 />
-                {#if p.name === ''}
-                  {p.applicationName || '(ohne Applikation)'}
-                {:else}
-                  {p.name}
-                  {#if p.applicationName !== p.name}<span class="muted">{p.applicationName}</span>{/if}
+                {#if p.effectiveRepoUrl}
+                  {@render wiki(p.effectiveWikiUrl, !p.repoUrl, p.effectiveTechnicalLead)}
                 {/if}
-              </label>
+              </div>
             {/each}
           </div>
         </div>
@@ -286,6 +337,12 @@
       Applikation unter „Ohne Projekt“. Die Farbe des Kunden bekommt der
       Ticketnummern-Chip; ohne eigene Wahl wird sie aus dem Namen berechnet (↺ setzt zurück). Neue Projekte kommen beim Abrufen
       automatisch dazu – bei einem ganz ausgeblendeten Kunden gleich ausgeblendet.
+    </p>
+    <p class="hint muted">
+      Repo-Link: Git-Link des Kunden bzw. Projekts im TFS (z. B. …/tfs/boom/_git/Northrail, Kurzform
+      erlaubt). Beim Speichern prüft BRSSupporter ihn mit deiner Windows-Anmeldung, ergänzt das Projekt
+      und sucht das Wiki des TFS-Projekts. TFVC-Links (_versionControl) werden abgelehnt. Hat ein Projekt
+      keinen eigenen Link, gelten Repo und Wiki des Kunden (grau). Feld leeren entfernt den Link.
     </p>
   </section>
 </div>
@@ -367,6 +424,39 @@
   }
   .projects .muted {
     font-size: 12px;
+  }
+  /* Project left, its repository link to the right. */
+  .project {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .project .check {
+    flex: 1;
+    min-width: 0;
+  }
+  .repo {
+    width: 320px;
+    max-width: 50%;
+    font-size: 12px;
+  }
+  .customer-repo {
+    margin-left: 22px;
+  }
+  .wiki {
+    font-size: 12px;
+    padding: 0 6px;
+    white-space: nowrap;
+  }
+  .wiki.inherited,
+  .wiki.none {
+    color: var(--muted);
+  }
+  /* The customer's link and wiki on one line under its name. */
+  .customer-links {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
   section {
     padding: 12px;

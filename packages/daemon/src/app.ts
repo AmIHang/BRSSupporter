@@ -2,6 +2,7 @@ import {
   ACCOUNT_SYSTEMS,
   type AccountSystem,
   type Core,
+  type RepoLink,
   type Settings,
   type SyncResult,
 } from '@brssupporter/core';
@@ -14,6 +15,8 @@ export interface SyncState {
   lastRunAt: string | null;
   lastResult: (SyncResult & { mode: 'full' | 'delta' }) | null;
   lastError: string | null;
+  /** Error of the OTMA part of the last sync (the BSM part may still have worked). */
+  otmaError: string | null;
   running: boolean;
 }
 
@@ -27,18 +30,32 @@ export interface AppDeps {
   syncState: () => SyncState;
   /** A stored account was saved or removed: its old session must not be used any more. */
   accountChanged: (system: AccountSystem) => void;
+  /** Checks a TFS Git link and completes it (project, wiki); rejects with a user-facing reason. */
+  resolveRepo: (url: string) => Promise<RepoLink>;
   getSettings: () => Settings;
   /** Validates and saves; throws a ZodError for invalid input. */
   updateSettings: (patch: unknown) => Settings;
   allowedOrigins?: readonly string[];
 }
 
-const projectPatchSchema = z.object({
-  applicationName: z.string(),
-  /** '' = the application's tickets without project. */
-  name: z.string(),
-  hidden: z.boolean(),
-});
+/** Link to a TFS repository (Git or TFVC browse URL), opened in the browser: http(s) only. */
+const repoUrlSchema = z
+  .string()
+  .trim()
+  .max(500)
+  .regex(/^https?:\/\/\S+$/i)
+  .nullable();
+
+const projectPatchSchema = z
+  .object({
+    applicationName: z.string(),
+    /** '' = the application's tickets without project. */
+    name: z.string(),
+    hidden: z.boolean().optional(),
+    /** null = none of its own, the customer's applies. */
+    repoUrl: repoUrlSchema.optional(),
+  })
+  .refine((b) => b.hidden !== undefined || b.repoUrl !== undefined);
 
 const accountSchema = z.object({
   user: z.string().trim().min(1).max(200),
@@ -55,8 +72,9 @@ const customerPatchSchema = z
       .regex(/^#[0-9a-f]{6}$/i)
       .nullable()
       .optional(),
+    repoUrl: repoUrlSchema.optional(),
   })
-  .refine((b) => b.hidden !== undefined || b.color !== undefined);
+  .refine((b) => b.hidden !== undefined || b.color !== undefined || b.repoUrl !== undefined);
 
 const systemSchema = z.enum(ACCOUNT_SYSTEMS);
 
@@ -144,24 +162,47 @@ export function createApp(deps: AppDeps): express.Express {
   app.get('/api/projects', (_req, res) => {
     res.json({ projects: deps.core.projects.list() });
   });
-  app.patch('/api/projects', express.json(), (req, res) => {
+  /**
+   * The checked repository for a patch: undefined = not part of it, null = remove. Answers 400
+   * with the reason (e.g. TFVC, ambiguous) and returns false when the link is refused.
+   */
+  async function checkedRepo(
+    repoUrl: string | null | undefined,
+    res: express.Response,
+  ): Promise<RepoLink | null | undefined | false> {
+    if (repoUrl === undefined || repoUrl === null) return repoUrl;
+    try {
+      return await deps.resolveRepo(repoUrl);
+    } catch (err) {
+      res.status(400).json({ error: errorText(err) });
+      return false;
+    }
+  }
+  /** Answers with the saved repository (completed link, wiki), so the UI shows what applies. */
+  app.patch('/api/projects', express.json(), async (req, res) => {
     const body = projectPatchSchema.safeParse(req.body);
     if (!body.success) return void res.status(400).json({ error: 'invalid_body' });
-    const { applicationName, name, hidden } = body.data;
-    if (!deps.core.projects.setHidden(applicationName, name, hidden)) {
-      return void res.status(404).json({ error: 'project_not_found' });
-    }
-    res.json({ applicationName, name, hidden });
+    const { applicationName, name, hidden, repoUrl } = body.data;
+    const repo = await checkedRepo(repoUrl, res);
+    if (repo === false) return;
+    const found =
+      (hidden === undefined || deps.core.projects.setHidden(applicationName, name, hidden)) &&
+      (repo === undefined || deps.core.projects.setRepo(applicationName, name, repo));
+    if (!found) return void res.status(404).json({ error: 'project_not_found' });
+    res.json({ ...body.data, repo });
   });
-  app.patch('/api/customers', express.json(), (req, res) => {
+  app.patch('/api/customers', express.json(), async (req, res) => {
     const body = customerPatchSchema.safeParse(req.body);
     if (!body.success) return void res.status(400).json({ error: 'invalid_body' });
-    const { customer, hidden, color } = body.data;
+    const { customer, hidden, color, repoUrl } = body.data;
+    const repo = await checkedRepo(repoUrl, res);
+    if (repo === false) return;
     const found =
       (hidden === undefined || deps.core.projects.setCustomerHidden(customer, hidden)) &&
-      (color === undefined || deps.core.projects.setCustomerColor(customer, color));
+      (color === undefined || deps.core.projects.setCustomerColor(customer, color)) &&
+      (repo === undefined || deps.core.projects.setCustomerRepo(customer, repo));
     if (!found) return void res.status(404).json({ error: 'customer_not_found' });
-    res.json(body.data);
+    res.json({ ...body.data, repo });
   });
   return app;
 }

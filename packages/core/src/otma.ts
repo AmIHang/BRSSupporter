@@ -104,25 +104,36 @@ export function otmaViewRequest(jump: unknown) {
   };
 }
 
-/** "Verantwortlich" of an OTMA ticket view; null when unset ("Kein … zugewiesen"). */
-export function otmaResponsible(view: unknown): string | null {
+/** Text value of a field of an OTMA ticket view; null when unset ("Kein … zugewiesen"). */
+function otmaField(view: unknown, feat: string): string | null {
   const n = nodes((view as { ui?: { form?: unknown } } | null)?.ui?.form).find(
-    (n) => n.feat === 'cfResponsiblePersonDisplayText',
+    (n) => n.feat === feat,
   );
   const v = typeof n?.value === 'string' ? n.value.trim() : '';
   return v && !/^Kein .* zugewiesen\??$/.test(v) ? v.slice(0, 200) : null;
 }
 
+export interface OtmaTicketInfo {
+  /** "Verantwortlich" (display name). */
+  responsible: string | null;
+  /** Workflow status, e.g. "In Arbeit". */
+  status: string | null;
+}
+
 /**
- * Responsible person of an OTMA ticket; `fetch` must go to OTMA (OTMA_ORIGIN). null also when OTMA
- * reports the ticket as missing (BSM can point to deleted ones); any other odd answer throws.
+ * Responsible person and status of an OTMA ticket; `fetch` must go to OTMA (OTMA_ORIGIN). Both
+ * null also when OTMA reports the ticket as missing (BSM can point to deleted ones); any other
+ * odd answer throws.
  */
-export async function lookupOtmaResponsible(
+export async function lookupOtmaTicket(
   fetch: BsmFetch,
   otmaNumber: string,
-): Promise<string | null> {
+): Promise<OtmaTicketInfo> {
   const view = await fetchOtmaView(fetch, otmaNumber);
-  return view === null ? null : otmaResponsible(view);
+  return {
+    responsible: otmaField(view, 'cfResponsiblePersonDisplayText'),
+    status: otmaField(view, 'Status'),
+  };
 }
 
 /**

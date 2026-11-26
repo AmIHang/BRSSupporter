@@ -10,7 +10,8 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         { "url": "https://bsm.boomsoftware.com/*" },
-        { "url": "https://otma.boomsoftware.com/*" }
+        { "url": "https://otma.boomsoftware.com/*" },
+        { "url": "https://tfs.boomsoftware.com/*" }
       ]
     }
   ]

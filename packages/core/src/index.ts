@@ -4,7 +4,7 @@ import { MemorySecretStore, type SecretStore } from './secrets.js';
 import { eq } from 'drizzle-orm';
 import { openDatabase } from './db/open.js';
 import { meta } from './db/schema.js';
-import { lookupOtmaNumber, lookupOtmaResponsible } from './otma.js';
+import { lookupOtmaNumber, lookupOtmaTicket } from './otma.js';
 import { ProjectService, TicketService, type SyncResult } from './tickets.js';
 
 export * from './bsm.js';
@@ -12,7 +12,15 @@ export * from './clock.js';
 export * from './settings.js';
 export * from './secrets.js';
 export { NO_PROJECT } from './tickets.js';
-export type { Project, Ticket, SyncResult } from './tickets.js';
+export type {
+  Contributor,
+  Project,
+  Release,
+  RepoInfo,
+  RepoLink,
+  Ticket,
+  SyncResult,
+} from './tickets.js';
 
 export interface CoreOptions {
   /** SQLite file, `:memory:` for tests. */
@@ -105,7 +113,7 @@ export function createCore(options: CoreOptions) {
       return { ...result, mode: full ? 'full' : 'delta' };
     },
     /**
-     * Looks up the OTMA number of tickets in process (see TicketService.otmaPending) via BSM, one
+     * Looks up the OTMA number of open tickets (see TicketService.otmaPending) via BSM, one
      * by one; each result is saved at once, so an error (e.g. login) only stops the rest.
      */
     async lookupOtmaNumbers(
@@ -123,30 +131,26 @@ export function createCore(options: CoreOptions) {
       return { checked, found };
     },
     /**
-     * Refreshes the OTMA responsible person of at most `batchSize` in-process tickets (the ones
-     * due longest), or of the given tickets with an OTMA number. `otmaFetch` must go to OTMA.
-     * Each result is saved at once; an error stops the rest. `pause` runs between two tickets.
+     * Refreshes OTMA responsible person and status of all listed tickets in process plus the given
+     * ones (e.g. whose BSM status just changed), each with an OTMA number. `otmaFetch` must go to
+     * OTMA. Each result is saved at once; an error stops the rest.
      */
-    async refreshOtmaResponsibles(
+    async refreshOtmaInfo(
       otmaFetch: BsmFetch,
-      which: number | string[],
-      pause: () => Promise<void> = async () => undefined,
+      also: string[] = [],
     ): Promise<{ checked: number; changed: number }> {
-      const due =
-        typeof which === 'number'
-          ? tickets.otmaResponsibleDue(which)
-          : tickets
-              .list()
-              .filter((t) => which.includes(t.number))
-              .flatMap((t) => (t.otmaNumber ? [{ ...t, otmaNumber: t.otmaNumber }] : []));
+      const extra = new Set(also);
+      const due = tickets
+        .list()
+        .filter((t) => t.status === 'inprocess' || extra.has(t.number))
+        .flatMap((t) => (t.otmaNumber ? [{ ...t, otmaNumber: t.otmaNumber }] : []));
       let checked = 0;
       let changed = 0;
       for (const t of due) {
-        if (checked) await pause();
-        const responsible = await lookupOtmaResponsible(otmaFetch, t.otmaNumber);
-        tickets.setOtmaResponsible(t.number, responsible);
+        const info = await lookupOtmaTicket(otmaFetch, t.otmaNumber);
+        tickets.setOtmaInfo(t.number, info);
         checked++;
-        if (responsible !== t.otmaResponsible) changed++;
+        if (info.responsible !== t.otmaResponsible || info.status !== t.otmaStatus) changed++;
       }
       return { checked, changed };
     },

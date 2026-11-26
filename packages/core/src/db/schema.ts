@@ -18,13 +18,15 @@ export const tickets = sqliteTable('tickets', {
   /** The full BSM response (indication + referenced users) as JSON. */
   data: text('data').notNull(),
   firstSeenAt: text('first_seen_at').notNull(),
-  /** OTMA ticket of the main work package ("Hauptarbeitspaket"), looked up once in process. */
+  /** OTMA ticket of the main work package ("Hauptarbeitspaket"), looked up while open. */
   otmaNumber: text('otma_number'),
   /** When the OTMA number was last looked up; again only after the ticket changed. */
   otmaCheckedAt: text('otma_checked_at'),
   /** "Verantwortlich" of the OTMA ticket (display name); null = none or not looked up yet. */
   otmaResponsible: text('otma_responsible'),
-  /** Last lookup of the responsible person; in-process tickets are refreshed in batches. */
+  /** Status of the OTMA ticket (e.g. "In Arbeit"), looked up with the responsible person. */
+  otmaStatus: text('otma_status'),
+  /** Last lookup of the responsible person; open tickets are refreshed in batches. */
   otmaResponsibleAt: text('otma_responsible_at'),
   /** Set when a complete snapshot no longer contains the ticket (left the filter). */
   goneAt: text('gone_at'),
@@ -48,6 +50,16 @@ export const customers = sqliteTable('customers', {
   name: text('name').primaryKey(),
   /** User-chosen color ("#rrggbb") for the ticket number chip; null = computed by the app. */
   color: text('color'),
+  /** Link to the customer's TFS repository (Git or TFVC); default for its projects. */
+  repoUrl: text('repo_url'),
+  /** Wiki of that repository's TFS project, found when the link was saved. */
+  wikiUrl: text('wiki_url'),
+  /** TV ("Technical Lead") from that wiki's Security Architecture page; refreshed daily. */
+  technicalLead: text('technical_lead'),
+  /** Latest release per system from that wiki's Releases page, JSON (Release[]); refreshed hourly. */
+  releases: text('releases'),
+  /** Who pushed or opened pull requests in that repository lately, JSON (Contributor[]); hourly. */
+  contributors: text('contributors'),
 });
 
 /**
@@ -61,6 +73,16 @@ export const projects = sqliteTable(
     name: text('name').notNull(),
     /** User setting: tickets of this project are not shown. */
     hidden: integer('hidden', { mode: 'boolean' }).notNull().default(false),
+    /** Link to the project's TFS repository; null = the customer's applies. */
+    repoUrl: text('repo_url'),
+    /** Wiki of that repository's TFS project, found when the link was saved. */
+    wikiUrl: text('wiki_url'),
+    /** TV ("Technical Lead") from that wiki's Security Architecture page; refreshed daily. */
+    technicalLead: text('technical_lead'),
+    /** Latest release per system from that wiki's Releases page, JSON (Release[]). */
+    releases: text('releases'),
+    /** Who pushed or opened pull requests in that repository lately, JSON (Contributor[]). */
+    contributors: text('contributors'),
     firstSeenAt: text('first_seen_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.applicationName, t.name] })],

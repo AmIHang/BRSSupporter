@@ -137,7 +137,7 @@ describe('syncBsm', () => {
     ]);
     await core.syncBsm(bsm.fetch, {});
     await core.syncBsm(bsm.fetch, {});
-    expect(core.projects.list()).toEqual([
+    expect(core.projects.list()).toMatchObject([
       {
         applicationName: 'ELL BRS',
         name: 'Wartung',
@@ -308,7 +308,7 @@ describe('syncBsm', () => {
     expect(filters).toEqual([{ minChangeDateFilter: '2026-11-18T09:55:00.000Z' }]);
   });
 
-  it('looks up OTMA numbers for tickets past "new", again only after a change', async () => {
+  it('looks up OTMA numbers of open tickets (new, in process), again only after a change', async () => {
     let now = new Date('2026-11-18T10:00:00Z');
     const core = createCore({ databaseFile: ':memory:', clock: { now: () => now } });
     const view = (withLink: boolean) => ({
@@ -346,29 +346,33 @@ describe('syncBsm', () => {
       { ...ticket('A1'), status: 'new' },
       { ...ticket('B2'), status: 'inprocess' },
       { ...ticket('C3'), status: 'inprocess' },
+      // Closed: no lookup.
+      { ...ticket('Z9'), status: 'delivered' },
     ];
     await core.syncBsm(fetch, {});
-    expect(await core.lookupOtmaNumbers(fetch)).toEqual({ checked: 2, found: 1 });
-    expect(views.sort()).toEqual(['B2', 'C3']);
+    expect(await core.lookupOtmaNumbers(fetch)).toEqual({ checked: 3, found: 2 });
+    expect(views.sort()).toEqual(['A1', 'B2', 'C3']);
     const otma = () => Object.fromEntries(core.tickets.list().map((t) => [t.number, t.otmaNumber]));
-    expect(otma()).toEqual({ A1: null, B2: '178839', C3: null });
+    expect(otma()).toEqual({ A1: '178839', B2: '178839', C3: null, Z9: null });
 
-    // Nothing changed: no lookup. A1 goes in process, C3 changes: both looked up.
+    // Nothing changed: no lookup. A1 goes in process (has its number), C3 changes, F6 is new:
+    // C3 and F6 looked up, most recently changed first.
     views.length = 0;
     expect(await core.lookupOtmaNumbers(fetch)).toEqual({ checked: 0, found: 0 });
     now = new Date('2026-11-18T10:30:00Z');
     serve = [
       { ...ticket('A1', '2026-11-18T10:20:00Z'), status: 'inprocess' },
       { ...ticket('C3', '2026-11-18T10:21:00Z'), status: 'inprocess' },
+      { ...ticket('F6', '2026-11-18T10:22:00Z'), status: 'new' },
     ];
     await core.syncBsm(fetch, {});
     // An error stops the run; what was looked up before it is kept.
-    failOn = 'A1';
+    failOn = 'C3';
     await expect(core.lookupOtmaNumbers(fetch)).rejects.toThrow('nicht angemeldet');
-    expect(views).toEqual(['C3']);
+    expect(views).toEqual(['F6']);
     failOn = null;
-    expect(await core.lookupOtmaNumbers(fetch)).toEqual({ checked: 1, found: 1 });
-    expect(otma()).toEqual({ A1: '178839', B2: '178839', C3: null });
+    expect(await core.lookupOtmaNumbers(fetch)).toEqual({ checked: 1, found: 0 });
+    expect(otma()).toEqual({ A1: '178839', B2: '178839', C3: null, F6: '178839', Z9: null });
 
     // Again after a change only while in process and still without number: C3 yes; B2 has one;
     // D4 (checked before, no number) is delivered.
