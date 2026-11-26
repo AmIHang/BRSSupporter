@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+.env
+.env.*
+
+# local data, never commit
+*.db
+*.db-wal
+*.db-shm
+
+# Tauri / Rust
+packages/app/src-tauri/target/
+packages/app/src-tauri/gen/
+
+.claude/worktrees/
+.claude/settings.local.json

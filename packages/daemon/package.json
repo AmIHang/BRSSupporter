@@ -1,0 +1,27 @@
+{
+  "name": "@brssupporter/daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "bin": {
+    "brssupporter-daemon": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brssupporter/core": "workspace:*",
+    "express": "^5.1.0",
+    "playwright-core": "^1.65.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.4"
+  }
+}

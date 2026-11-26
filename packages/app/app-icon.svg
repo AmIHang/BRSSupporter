@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- BRSSupporter: a ticket under the magnifier. Same family as BRSOrganizer/BRSDispatcher (rounded square, white mark, red accent), indigo so all three stay apart in the taskbar. -->
+  <rect width="512" height="512" rx="112" fill="#3730a3"/>
+  <path d="M72 140 h264 v60 a40 40 0 0 0 0 80 v60 h-264 v-60 a40 40 0 0 0 0 -80 z" fill="#ffffff"/>
+  <path d="M128 206 h132 M128 274 h88" stroke="#3730a3" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="344" cy="320" r="68" fill="#3730a3" stroke="#f85149" stroke-width="34"/>
+  <path d="M394 370 l46 46" stroke="#f85149" stroke-width="44" stroke-linecap="round"/>
+</svg>

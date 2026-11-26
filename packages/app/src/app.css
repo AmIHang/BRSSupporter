@@ -1,0 +1,136 @@
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f5f7fa;
+  --fg: #1f2328;
+  --muted: #656d76;
+  --border: #d8dee4;
+  --accent: #8250df;
+  --danger: #cf222e;
+  --ok: #1a7f37;
+  --chip: #eef1f5;
+  --chip-purple-bg: #8250df;
+  --chip-purple-fg: #ffffff;
+  --chip-blue-bg: #ddf4ff;
+  --chip-blue-fg: #0550ae;
+  --chip-orange-bg: #fb8f44;
+  --chip-orange-fg: #1f2328;
+  --chip-teal-bg: #d3f5ef;
+  --chip-teal-fg: #0b5f52;
+  --chip-pink-bg: #ffe1ef;
+  --chip-pink-fg: #9a1755;
+  --chip-red-bg: #cf222e;
+  --chip-red-fg: #ffffff;
+  --chip-green-bg: #dafbe1;
+  --chip-green-fg: #116329;
+  color-scheme: light dark;
+  font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1d21;
+    --bg-soft: #24272c;
+    --fg: #e6e8eb;
+    --muted: #9198a1;
+    --border: #353a41;
+    /* Dark enough for white text on chips and the primary button (contrast ≥ 4.5:1). */
+    --accent: #8957e5;
+    --danger: #ff6b6b;
+    --ok: #3fb950;
+    --chip: #2d3138;
+    --chip-purple-bg: #8957e5;
+    --chip-purple-fg: #ffffff;
+    --chip-blue-bg: #1b3a5c;
+    --chip-blue-fg: #9cd1ff;
+    --chip-orange-bg: #db6d28;
+    --chip-orange-fg: #ffffff;
+    --chip-teal-bg: #12423b;
+    --chip-teal-fg: #7ee2d0;
+    --chip-pink-bg: #4a1730;
+    --chip-pink-fg: #ff9fcb;
+    /* White text stays readable (contrast >= 4.5:1). */
+    --chip-red-bg: #da3633;
+    --chip-red-fg: #ffffff;
+    --chip-green-bg: #1b4721;
+    --chip-green-fg: #7ee787;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.icon {
+  border: none;
+  background: transparent;
+  padding: 2px 6px;
+  color: var(--muted);
+}
+
+button.icon:hover {
+  color: var(--fg);
+}
+
+input[type='text'],
+input[type='password'],
+input[type='url'],
+input[type='number'],
+input[type='datetime-local'] {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+input:focus,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--danger);
+}
