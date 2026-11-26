@@ -89,6 +89,31 @@
     }
   }
 
+  /** Two clicks: "Übernehmen" arms the button for a few seconds, the second click takes over. */
+  let confirming = $state<string | null>(null);
+  let accepting = $state<string | null>(null);
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
+
+  async function accept(t: Ticket) {
+    if (confirming !== t.number) {
+      confirming = t.number;
+      clearTimeout(confirmTimer);
+      confirmTimer = setTimeout(() => (confirming = null), 4_000);
+      return;
+    }
+    confirming = null;
+    accepting = t.number;
+    try {
+      await api.acceptTicket(t.number);
+      error = null;
+      await refresh();
+    } catch (err) {
+      error = `${t.number} übernehmen: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      accepting = null;
+    }
+  }
+
   async function syncNow() {
     sync = await api.sync().catch(() => sync);
   }
@@ -200,6 +225,20 @@
           title={t.link ? 'Im BSM öffnen' : undefined}>{t.number}</button
         >
         <span class="chip status-{t.status}">{statusLabel(t.status)}</span>
+        {#if t.status === 'new'}
+          <button
+            class="accept"
+            class:armed={confirming === t.number}
+            disabled={accepting !== null}
+            title="Ticket in BSM übernehmen (dem hinterlegten BSM-Konto zuweisen)"
+            onclick={() => accept(t)}
+            >{accepting === t.number
+              ? 'Wird übernommen…'
+              : confirming === t.number
+                ? 'Wirklich übernehmen?'
+                : 'Übernehmen'}</button
+          >
+        {/if}
       </div>
       <div class="summary">{t.summary ?? '(ohne Titel)'}</div>
       <div class="muted">
@@ -322,6 +361,18 @@
   .number:disabled {
     color: inherit;
     cursor: default;
+  }
+  .accept {
+    font-size: 12px;
+    padding: 1px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--ok);
+    color: var(--ok);
+    background: transparent;
+  }
+  .accept.armed {
+    background: var(--ok);
+    color: var(--bg);
   }
   .chip {
     background: var(--chip);

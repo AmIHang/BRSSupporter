@@ -13,6 +13,7 @@ import { parseArgs } from 'node:util';
 import { createApp, type SyncState } from './app.js';
 import { edgeSessions, errorText } from './bsm-edge.js';
 import { DEFAULT_ALLOWED_ORIGINS } from './http/security.js';
+import { takeOverTicket } from './takeover.js';
 
 const { values: args } = parseArgs({
   options: {
@@ -63,11 +64,25 @@ async function sync(full = false): Promise<void> {
   }
 }
 
+/** Takes the ticket over in BSM (same Edge session queue as the sync), then syncs the change. */
+async function takeOver(number: string): Promise<void> {
+  log(`taking over ${number}`);
+  try {
+    await bsm((fetch, ctx) => takeOverTicket(fetch, ctx, number));
+  } catch (err) {
+    log(`take over ${number} failed: ${errorText(err)}`);
+    throw err;
+  }
+  log(`took over ${number}`);
+  void sync();
+}
+
 const port = Number(args.port);
 const app = createApp({
   core,
   getPort: () => port,
   sync,
+  takeOver,
   syncState: () => ({ ...state }),
   accountChanged: (system) => {
     log(`${system} account changed`);

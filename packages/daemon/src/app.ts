@@ -1,6 +1,13 @@
-import { ACCOUNT_SYSTEMS, type AccountSystem, type Core, type Settings, type SyncResult } from '@brssupporter/core';
+import {
+  ACCOUNT_SYSTEMS,
+  type AccountSystem,
+  type Core,
+  type Settings,
+  type SyncResult,
+} from '@brssupporter/core';
 import express from 'express';
 import { z } from 'zod';
+import { errorText } from './bsm-edge.js';
 import { DEFAULT_ALLOWED_ORIGINS, hostCheck, originCheck } from './http/security.js';
 
 export interface SyncState {
@@ -15,6 +22,8 @@ export interface AppDeps {
   getPort: () => number;
   /** full: fetch everything instead of the delta. */
   sync: (full?: boolean) => Promise<void>;
+  /** Takes the ticket over in BSM (assigns it to the stored BSM account); user-facing errors. */
+  takeOver: (number: string) => Promise<void>;
   syncState: () => SyncState;
   /** A stored account was saved or removed: its old session must not be used any more. */
   accountChanged: (system: AccountSystem) => void;
@@ -52,8 +61,8 @@ const customerPatchSchema = z
 const systemSchema = z.enum(ACCOUNT_SYSTEMS);
 
 // shortcut: no bearer token yet (BRSOrganizer has one) – Host/Origin checks stop browsers and DNS
-// rebinding, not other local processes. Those could replace the stored accounts (never read the
-// passwords), but could just as well use the Edge profile in the data folder directly; add the
+// rebinding, not other local processes. Those could take over tickets via POST .../accept or
+// replace the stored accounts (never read the passwords), but could just as well use the Edge profile in the data folder directly; add the
 // token with the Tauri sidecar (Rust reads it from the Credential Manager, like BRSOrganizer).
 export function createApp(deps: AppDeps): express.Express {
   const app = express();
@@ -63,6 +72,19 @@ export function createApp(deps: AppDeps): express.Express {
 
   app.get('/api/tickets', (_req, res) => {
     res.json({ tickets: deps.core.tickets.list() });
+  });
+  /** Only tickets the list shows as new; BSM is asked again before anything is clicked. */
+  app.post('/api/tickets/:number/accept', async (req, res) => {
+    const { number } = req.params;
+    const ticket = deps.core.tickets.list().find((t) => t.number === number);
+    if (!ticket) return void res.status(404).json({ error: 'ticket_not_found' });
+    if (ticket.status !== 'new') return void res.status(409).json({ error: 'ticket_not_new' });
+    try {
+      await deps.takeOver(number);
+      res.json({ number });
+    } catch (err) {
+      res.status(502).json({ error: errorText(err) });
+    }
   });
   /** A stored account (bsm | otma): the user name only – the password never leaves the store. */
   app.get('/api/account/:system', (req, res) => {

@@ -77,6 +77,9 @@ export const api = {
   syncState: () => call<SyncState>('/api/sync'),
   /** full: everything instead of the changes since the last run. */
   sync: (full = false) => call<SyncState>('/api/sync', 'POST', { full }),
+  /** Takes the ticket over in BSM (assigns it to the stored BSM account); takes a few seconds. */
+  acceptTicket: (number: string) =>
+    call<unknown>(`/api/tickets/${encodeURIComponent(number)}/accept`, 'POST'),
   settings: () => call<Settings>('/api/settings'),
   account: (system: AccountSystem) => call<Account>(`/api/account/${system}`),
   saveAccount: (system: AccountSystem, user: string, password: string) =>

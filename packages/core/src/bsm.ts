@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export const BSM_ORIGIN = 'https://bsm.boomsoftware.com';
 export const OTMA_ORIGIN = 'https://otma.boomsoftware.com';
+/** Workflow endpoint of the BSM web UI (not the Personal API), e.g. for the take-over save. */
+export const BSM_WORKFLOW_PATH = '/api/core/web/runwf/';
 
 /**
  * Network access to the BSM Personal API, injected (tests run without network).

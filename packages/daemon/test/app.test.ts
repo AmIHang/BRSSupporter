@@ -6,7 +6,7 @@ import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 
-function setup() {
+function setup(takeOver: (number: string) => Promise<void> = async () => undefined) {
   const core = createCore({ databaseFile: ':memory:' });
   core.tickets.applySnapshot(
     [
@@ -27,6 +27,7 @@ function setup() {
     core,
     getPort: () => 47910,
     sync: async (full?: boolean) => void syncs.push(full ?? false),
+    takeOver,
     syncState: () => ({
       lastRunAt: null,
       lastResult: null,
@@ -159,5 +160,39 @@ describe('REST', () => {
       .send({ full: 'yes' });
     expect(bad.status).toBe(400);
     expect(s.syncs()).toEqual([false, true]);
+  });
+  it("takes over only new tickets and reports BSM's error", async () => {
+    const taken: string[] = [];
+    const { app, core } = setup(async (n) => void taken.push(n));
+    const accept = (a: typeof app, n: string) =>
+      request(a)
+        .post('/api/tickets/' + n + '/accept')
+        .set('Host', '127.0.0.1:47910');
+    expect((await accept(app, 'NOPEg0001')).status).toBe(404);
+    expect((await accept(app, 'ELLBg0169')).status).toBe(200);
+    expect(taken).toEqual(['ELLBg0169']);
+
+    core.tickets.applySnapshot(
+      [
+        {
+          number: 'ELLBg0169',
+          status: 'inprocess',
+          applicationName: 'ELL BRS',
+          projectName: 'ELL',
+          createDate: '2026-11-01T00:00:00Z',
+          changeDate: '2026-11-02T00:00:00Z',
+        },
+      ],
+      [],
+    );
+    expect((await accept(app, 'ELLBg0169')).status).toBe(409);
+    expect(taken).toEqual(['ELLBg0169']);
+
+    const failing = setup(async () => {
+      throw new Error('ELLBg0169 ist nicht mehr neu');
+    });
+    const res = await accept(failing.app, 'ELLBg0169');
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe('ELLBg0169 ist nicht mehr neu');
   });
 });
