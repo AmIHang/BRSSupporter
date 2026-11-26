@@ -241,6 +241,39 @@ describe('technical lead (TV)', () => {
     expect(latestReleases('# PROD\n| a | b |\n| 2026-01-01 | 1.0 |')).toEqual([]);
   });
 
+  it('resolves a mention written as @<DOMAIN\\account> (e.g. the AMIGO wiki)', async () => {
+    const pages = `${C}/AMIGO/_apis/wiki/wikis/AMIGO.wiki/pages`;
+    const get: TfsGet = async (url) => {
+      if (url.startsWith(`${pages}?path=/&`)) {
+        return { path: '/', subPages: [{ path: '/Security-Architecture' }] };
+      }
+      if (url.startsWith(`${pages}?path=%2FSecurity-Architecture&`)) {
+        return { content: '| **Technical Lead** | @<BOOM\\gra> |' };
+      }
+      if (
+        url ===
+        `${C}/_apis/identities?searchFilter=AccountName&filterValue=BOOM%5Cgra&api-version=5.0`
+      ) {
+        return {
+          value: [
+            { id: 'old', providerDisplayName: 'Old', isActive: false },
+            {
+              id: 'gra',
+              providerDisplayName: 'Grantner Dorian',
+              isActive: true,
+              properties: { Account: { $value: 'gra' } },
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected ${url}`);
+    };
+    expect(await readWikiInfo(`${C}/AMIGO/_wiki/wikis/AMIGO.wiki`, get)).toEqual({
+      technicalLead: 'Grantner Dorian (GRA)',
+      releases: [],
+    });
+  });
+
   it('leaves TV and releases empty when the wiki has neither page', async () => {
     const get: TfsGet = async () => ({ path: '/', subPages: [{ path: '/Home', subPages: [] }] });
     expect(await readWikiInfo(`${C}/X/_wiki/wikis/X.wiki`, get)).toEqual({

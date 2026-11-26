@@ -109,7 +109,9 @@ hinterlegt ist (siehe [Projekte und Repo-Links](#projekte-und-repo-links)).
 ### Was das Wiki dafür braucht
 
 - Eine Seite **„Security Architecture“** (beliebige Ebene) mit einer Tabellenzeile
-  `| **Technical Lead** | @Person |`.
+  `| **Technical Lead** | @Person |`. Die Erwähnung darf im Wiki als Person (`@<…-ID>`) oder als
+  Windows-Konto (`@<BOOM\gra>`) stehen; beides wird zu „Name (KÜRZEL)“. Normaler Text wird so
+  übernommen.
 - Eine Seite **„Releases“** mit je einer Überschrift pro System (`# PROD`, `# QS`, …) und darunter
   einer Tabelle mit den Spalten `Date` (JJJJ-MM-TT) und `Version`. Pro System zählt die Zeile mit dem
   neuesten Datum.

@@ -155,6 +155,7 @@ const identitiesSchema = z.object({
     z.looseObject({
       id: z.string(),
       providerDisplayName: z.string(),
+      isActive: z.boolean().nullish(),
       properties: z
         .looseObject({ Account: z.looseObject({ $value: z.string() }).optional() })
         .optional(),
@@ -240,22 +241,39 @@ export async function readWikiInfo(wikiUrl: string, get: TfsGet): Promise<WikiIn
   const releases = latestReleases(await content('releases'));
   const cell = technicalLeadCell(await content('security architecture'));
   if (!cell) return { technicalLead: null, releases };
-  const ids = [...cell.matchAll(/@<([0-9a-f-]{36})>/gi)].map((x) => x[1]!);
-  if (!ids.length) return { technicalLead: cell.replace(/[*_`]/g, '').trim() || null, releases };
-  const found = identitiesSchema.parse(
-    await get(`${collection}/_apis/identities?identityIds=${ids.join(',')}&${API}`),
-  ).value;
-  const technicalLead = ids
-    .map((id) => {
-      const i = found.find((x) => x.id.toLowerCase() === id.toLowerCase());
-      if (!i) return id;
-      const account = i.properties?.Account?.$value;
-      return account
-        ? `${i.providerDisplayName} (${account.toUpperCase()})`
-        : i.providerDisplayName;
-    })
-    .join(', ');
-  return { technicalLead, releases };
+  // TFS mentions come as @<identity id> or as @<DOMAIN\account>, depending on how they were typed.
+  const mentions = [...cell.matchAll(/@<([^>]+)>/g)].map((x) => x[1]!.trim());
+  if (!mentions.length) {
+    return { technicalLead: cell.replace(/[*_`]/g, '').trim() || null, releases };
+  }
+  const isId = (m: string) => /^[0-9a-f-]{36}$/i.test(m);
+  const ids = mentions.filter(isId);
+  const byId = ids.length
+    ? identitiesSchema.parse(
+        await get(`${collection}/_apis/identities?identityIds=${ids.join(',')}&${API}`),
+      ).value
+    : [];
+  const label = (i: z.infer<typeof identitiesSchema>['value'][number]) => {
+    const account = i.properties?.Account?.$value;
+    return account ? `${i.providerDisplayName} (${account.toUpperCase()})` : i.providerDisplayName;
+  };
+  const names: string[] = [];
+  for (const m of mentions) {
+    if (isId(m)) {
+      const i = byId.find((x) => x.id.toLowerCase() === m.toLowerCase());
+      names.push(i ? label(i) : m);
+      continue;
+    }
+    const found = identitiesSchema.parse(
+      await get(
+        `${collection}/_apis/identities?searchFilter=AccountName&filterValue=${enc(m)}&${API}`,
+      ),
+    ).value;
+    // Several identities per account are possible (old ones): the active one wins.
+    const i = found.find((x) => x.isActive) ?? found[0];
+    names.push(i ? label(i) : m);
+  }
+  return { technicalLead: names.join(', '), releases };
 }
 
 const repoSchema = z.looseObject({ defaultBranch: z.string().nullish() });
